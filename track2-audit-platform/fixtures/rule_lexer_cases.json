@@ -1,0 +1,31 @@
+{
+  "valid": [
+    {
+      "expression": "A OR B AND NOT C",
+      "kinds": ["IDENTIFIER", "OR", "IDENTIFIER", "AND", "NOT", "IDENTIFIER", "EOF"]
+    },
+    {
+      "expression": "(Splitting_Window_Sum_Minor >= 10000000 AND Splitting_Window_Count >= 3)",
+      "kinds": ["LEFT_PAREN", "IDENTIFIER", "GREATER_EQUAL", "NUMBER", "AND", "IDENTIFIER", "GREATER_EQUAL", "NUMBER", "RIGHT_PAREN", "EOF"]
+    },
+    {
+      "expression": "Balance_Anomaly_Flag == TRUE OR Circular_Flow_Detected != false",
+      "kinds": ["IDENTIFIER", "EQUAL", "BOOLEAN", "OR", "IDENTIFIER", "NOT_EQUAL", "BOOLEAN", "EOF"]
+    },
+    {
+      "expression": "Variance_Threshold < 10.50\nAND Severity <= 5",
+      "kinds": ["IDENTIFIER", "LESS", "NUMBER", "AND", "IDENTIFIER", "LESS_EQUAL", "NUMBER", "EOF"]
+    }
+  ],
+  "invalid": [
+    {"expression": "Amount > .5", "code": "INVALID_NUMBER"},
+    {"expression": "Amount > 10.", "code": "INVALID_NUMBER"},
+    {"expression": "Amount > 1e3", "code": "INVALID_NUMBER"},
+    {"expression": "Amount > 1.2.3", "code": "INVALID_NUMBER"},
+    {"expression": "A = 1", "code": "INVALID_OPERATOR"},
+    {"expression": "A ! TRUE", "code": "INVALID_OPERATOR"},
+    {"expression": "foo @ 10", "code": "UNKNOWN_CHARACTER"},
+    {"expression": "(A AND B", "code": "UNBALANCED_PARENTHESIS"},
+    {"expression": "A AND B)", "code": "UNBALANCED_PARENTHESIS"}
+  ]
+}
