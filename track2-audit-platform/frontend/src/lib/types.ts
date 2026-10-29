@@ -267,6 +267,7 @@ export interface IngestionJobCounts {
   readonly total_rows: number;
   readonly accepted: number;
   readonly rejected: number;
+  readonly duplicate: number;
   readonly conflict: number;
   readonly pending_review: number;
 }

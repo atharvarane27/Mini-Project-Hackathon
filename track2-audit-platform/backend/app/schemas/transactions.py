@@ -86,7 +86,8 @@ class CanonicalTransaction(BaseModel):
     def validate_positive_amount(self) -> "CanonicalTransaction":
         if self.amount_minor <= 0:
             raise ValueError(
-                f"Canonical transaction amount_minor must be strictly positive, got {self.amount_minor}"
+                "Canonical transaction amount_minor must be strictly positive, "
+                f"got {self.amount_minor}"
             )
         return self
 

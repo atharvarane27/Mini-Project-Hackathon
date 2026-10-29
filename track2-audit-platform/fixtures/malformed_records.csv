@@ -1,1 +1,9 @@
-
+Transaction_ID,Account_Number,Account_Name,Transaction_Amount,Transaction_Mode,Transaction_Type,Transaction_Date,Transaction_Source,Transaction_Destination,Branch_ID,Ledger_Source,Currency,Transaction_Status,Posting_Date,External_Reference,Source_Revision,Entry_Direction,Description
+MAL-001,acc-1,User 1,5000.00,Transfer Out,NEFT,2026-10-29T10:00:00Z,acc-1,acc-2,BR-MUMBAI,SRC_INTERNAL_CORE,INR,POSTED,2026-10-29T10:00:00Z,EXT-VAL-01,1,DEBIT,Transfer EXT-VAL-01 from acc-1 to acc-2
+MAL-002,acc-1,User 2,-500.00,Transfer Out,NEFT,2026-10-29T10:05:00Z,acc-1,acc-2,BR-MUMBAI,SRC_INTERNAL_CORE,INR,POSTED,2026-10-29T10:05:00Z,EXT-ERR-02,1,DEBIT,Transfer EXT-ERR-02 from acc-1 to acc-2
+MAL-003,acc-1,User 3,0.00,Transfer Out,NEFT,2026-10-29T10:10:00Z,acc-1,acc-2,BR-MUMBAI,SRC_INTERNAL_CORE,INR,POSTED,2026-10-29T10:10:00Z,EXT-ERR-03,1,DEBIT,Transfer EXT-ERR-03 from acc-1 to acc-2
+MAL-004,acc-1,User 4,1500.00,Transfer Out,NEFT,INVALID_DATE_STRING,acc-1,acc-2,BR-MUMBAI,SRC_INTERNAL_CORE,INR,POSTED,INVALID_DATE_STRING,EXT-ERR-04,1,DEBIT,Transfer EXT-ERR-04 from acc-1 to acc-2
+MAL-005,acc-1,User 5,2000.00,Transfer Out,NEFT,2026-10-29T10:15:00Z,acc-1,acc-2,BR-MUMBAI,SRC_INTERNAL_CORE,INR,POSTED,2026-10-29T10:15:00Z,MAL-005,1,DEBIT,Transfer MAL-005 from acc-1 to acc-2
+MAL-006,acc-1,User 6,2500.00,Transfer Out,NEFT,2026-10-29T10:20:00Z,acc-1,acc-2,BR-MUMBAI,SRC_INTERNAL_CORE,TOOLONG,POSTED,2026-10-29T10:20:00Z,EXT-ERR-06,1,DEBIT,Transfer EXT-ERR-06 from acc-1 to acc-2
+MAL-007,acc-1,User 7,3000.00,Transfer Out,NEFT,2026-10-29T10:25:00Z,acc-1,acc-1,BR-MUMBAI,SRC_INTERNAL_CORE,INR,POSTED,2026-10-29T10:25:00Z,EXT-ERR-07,1,DEBIT,Transfer EXT-ERR-07 from acc-1 to acc-1
+MAL-008,acc-1,User 8,7500.00,Transfer Out,NEFT,2026-10-29T10:30:00Z,acc-1,acc-3,BR-MUMBAI,SRC_INTERNAL_CORE,INR,POSTED,2026-10-29T10:30:00Z,EXT-VAL-08,1,DEBIT,Transfer EXT-VAL-08 from acc-1 to acc-3

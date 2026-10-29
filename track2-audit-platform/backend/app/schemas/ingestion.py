@@ -35,6 +35,7 @@ class IngestionJobCounts(BaseModel):
     total_rows: StrictInt = 0
     accepted: StrictInt = 0
     rejected: StrictInt = 0
+    duplicate: StrictInt = 0
     conflict: StrictInt = 0
     pending_review: StrictInt = 0
 

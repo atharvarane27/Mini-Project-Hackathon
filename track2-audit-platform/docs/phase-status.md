@@ -206,3 +206,56 @@
   - `test_seed_database_repeatability`: PASSED (Idempotent 0 duplicates)
 - **Total Backend Tests: 92/92 PASSED**
 - **Total Frontend Tests: 7/7 PASSED** (Vitest), `tsc --noEmit` 0 errors.
+
+---
+
+## Phase P03: Bounded Streaming Ingestion and Validation
+
+- **Status**: Completed
+- **Date**: 2026-10-30
+- **Implemented Scope**:
+  1. `backend/app/ingestion/csv_reader.py`:
+     - `BoundedCSVReader`: Stream rows line-by-line in bounded chunks of 500 records (`batch_size=500`).
+     - Memory invariant: Never loads the full CSV file into memory; supports TextIO, file path, and binary UploadFile streams.
+     - `compute_payload_hash`: SHA-256 deterministic payload digest over canonical sorted JSON.
+     - BOM handling: Supports UTF-8 with BOM (`utf-8-sig`).
+  2. `backend/app/ingestion/normalizer.py`:
+     - `RowNormalizer`: Type parsing, timestamp normalization to timezone-aware UTC, decimal currency amounts converted to integer minor units (paise).
+     - Strict validation taxonomy with stable diagnostic codes:
+       - `MISSING_EXTERNAL_REF`: Empty or missing external reference identifier.
+       - `INVALID_AMOUNT`: Non-positive, zero, or non-decimal amounts.
+       - `INVALID_TIMESTAMP`: Malformed date/time strings or unparseable formats.
+       - `INVALID_CURRENCY`: Currency code not conforming to ISO 4217 (or non-INR in demo).
+       - `INVALID_DIRECTION`: Entry direction not DEBIT or CREDIT.
+       - `MISSING_COUNTERPARTY`: Missing sender/source or receiver/destination.
+       - `IDENTICAL_COUNTERPARTY`: Source account equals destination account.
+  3. `backend/app/ingestion/canonicalizer.py`:
+     - `Canonicalizer`: Converts valid normalized rows into `SourceRecord`, `Transaction`, and `SourceRecordTransaction` link models.
+     - Automatically ensures branch and account entities exist in the session to avoid foreign key violation on RESTRICT constraints.
+  4. `backend/app/ingestion/service.py`:
+     - `IngestionService`: Orchestrates reading, normalizing, canonicalizing, and committing bounded transactional batches.
+     - Job lifecycle management: `PENDING` -> `RUNNING` -> `COMPLETED` / `PARTIAL` / `FAILED`.
+     - Idempotency-Key support: Re-running with identical key returns cached job state.
+     - Row deduplication vs conflict resolution:
+       - Exact duplicate payload for `(source_system_id, external_ref, source_revision)` increments duplicate count without double-inserting records or transactions.
+       - Altered payload with same `(source_system_id, external_ref, source_revision)` flags an `EXTERNAL_REF_REVISION_CONFLICT` row error quarantined for audit review.
+     - Outbox pattern: Atomic staging of `SOURCE_RECORD_ACCEPTED` events in `outbox_events` within the same database transaction.
+     - SQLite hermetic compatibility: Ensures UTC timezone awareness on read-back datetimes.
+  5. `backend/app/api/v1/ingestion.py`:
+     - `POST /api/v1/ingestion/jobs`: Multipart form upload accepting CSV file, `source_system_id`, optional `branch_id`, and optional `Idempotency-Key` header.
+     - `GET /api/v1/ingestion/jobs/{id}`: Returns ingestion job status and counts envelope (`total_rows`, `accepted`, `rejected`, `duplicate`, `errors`).
+  6. `backend/app/schemas/ingestion.py` & `frontend/src/lib/types.ts`:
+     - Synchronized models including `duplicate` counter on `IngestionJobCounts`.
+  7. Synthetic Fixtures (`backend/scripts/generate_fixture.py` & `fixtures/`):
+     - Deterministic seeded generator (`--seed 42`).
+     - Standard test fixtures generated: `ledger_internal.csv`, `ledger_counterpart.csv`, `malformed_records.csv`, `circular_transfers.csv`, `splitting_transfers.csv`.
+  8. Test Suite (`backend/tests/integration/test_ingestion.py`):
+     - 52 integration and unit tests covering normalizer codes, chunked streaming, idempotency, revision conflicts, 10,000-row bounded memory profile (`tracemalloc` peak < 30 MB), and FastAPI endpoints.
+
+### Test Results
+- `tests/integration/test_ingestion.py`: **52/52 PASSED**
+- **Total Backend Tests: 144/144 PASSED** (exit code 0 in 30.03s)
+- **Ruff linter**: All checks passed (0 errors)
+- **Mypy typechecker**: Success (0 issues across 97 source files)
+- **Frontend linter, typecheck & Vitest**: All checks passed (7/7 tests passed, 0 errors)
+

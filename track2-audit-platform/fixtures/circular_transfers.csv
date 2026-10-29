@@ -1,1 +1,4 @@
-
+Transaction_ID,Account_Number,Account_Name,Transaction_Amount,Transaction_Mode,Transaction_Type,Transaction_Date,Transaction_Source,Transaction_Destination,Branch_ID,Ledger_Source,Currency,Transaction_Status,Posting_Date,External_Reference,Source_Revision,Entry_Direction,Description
+CIRC-01,acc-circ-A,Corp A,500000.00,Transfer Out,NEFT,2026-10-29T11:00:00Z,acc-circ-A,acc-circ-B,BR-MUMBAI,SRC_INTERNAL_CORE,INR,POSTED,2026-10-29T11:00:00Z,EXT-CIRC-01,1,DEBIT,Transfer EXT-CIRC-01 from acc-circ-A to acc-circ-B
+CIRC-02,acc-circ-B,Corp B,495000.00,Transfer Out,NEFT,2026-10-29T11:08:00Z,acc-circ-B,acc-circ-C,BR-MUMBAI,SRC_INTERNAL_CORE,INR,POSTED,2026-10-29T11:08:00Z,EXT-CIRC-02,1,DEBIT,Transfer EXT-CIRC-02 from acc-circ-B to acc-circ-C
+CIRC-03,acc-circ-C,Corp C,490000.00,Transfer Out,NEFT,2026-10-29T11:18:00Z,acc-circ-C,acc-circ-A,BR-MUMBAI,SRC_INTERNAL_CORE,INR,POSTED,2026-10-29T11:18:00Z,EXT-CIRC-03,1,DEBIT,Transfer EXT-CIRC-03 from acc-circ-C to acc-circ-A

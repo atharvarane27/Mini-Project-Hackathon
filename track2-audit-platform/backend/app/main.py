@@ -9,6 +9,7 @@ from fastapi import FastAPI, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.v1.ingestion import router as ingestion_router
 from app.config import get_settings
 from app.core.errors import (
     AppException,
@@ -111,6 +112,10 @@ async def request_id_and_logging_middleware(
         request_id_ctx.reset(token)
 
 
+# Register API Routers
+app.include_router(ingestion_router, prefix=settings.API_V1_PREFIX)
+
+
 @app.get(
     f"{settings.API_V1_PREFIX}/health",
     response_model=ApiResponse[HealthStatus],
@@ -134,3 +139,4 @@ async def api_health(request: Request) -> ApiResponse[HealthStatus]:
 async def docker_health_probe() -> dict[str, str]:
     """Lightweight root health probe for Docker compose / orchestrator liveness checks."""
     return {"status": "ok"}
+

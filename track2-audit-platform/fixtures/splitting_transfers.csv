@@ -1,1 +1,4 @@
-
+Transaction_ID,Account_Number,Account_Name,Transaction_Amount,Transaction_Mode,Transaction_Type,Transaction_Date,Transaction_Source,Transaction_Destination,Branch_ID,Ledger_Source,Currency,Transaction_Status,Posting_Date,External_Reference,Source_Revision,Entry_Direction,Description
+SPLIT-01,acc-split-S,Splitting Sender,35000.00,Transfer Out,NEFT,2026-10-29T14:00:00Z,acc-split-S,acc-split-R,BR-MUMBAI,SRC_INTERNAL_CORE,INR,POSTED,2026-10-29T14:00:00Z,EXT-SPLIT-01,1,DEBIT,Transfer EXT-SPLIT-01 from acc-split-S to acc-split-R
+SPLIT-02,acc-split-S,Splitting Sender,38000.00,Transfer Out,NEFT,2026-10-29T14:12:00Z,acc-split-S,acc-split-R,BR-MUMBAI,SRC_INTERNAL_CORE,INR,POSTED,2026-10-29T14:12:00Z,EXT-SPLIT-02,1,DEBIT,Transfer EXT-SPLIT-02 from acc-split-S to acc-split-R
+SPLIT-03,acc-split-S,Splitting Sender,32000.00,Transfer Out,NEFT,2026-10-29T14:25:00Z,acc-split-S,acc-split-R,BR-MUMBAI,SRC_INTERNAL_CORE,INR,POSTED,2026-10-29T14:25:00Z,EXT-SPLIT-03,1,DEBIT,Transfer EXT-SPLIT-03 from acc-split-S to acc-split-R

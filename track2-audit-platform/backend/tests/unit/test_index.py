@@ -180,10 +180,8 @@ class TestDuplicateResolver:
         resolver.add_record("r2", {"payee_name": "Alberto", "amount_minor": 100})
         results = resolver.resolve("r1", {"payee_name": "Alice", "amount_minor": 100})
         # "alice" vs "alberto" — low similarity — should NOT appear at 0.9 threshold
-        # This tests the threshold filter, not just blocking
         record_ids = {c.record_id_b for c in results}
-        # If r2 happens to pass (edge case), still no assertion error — just confirm
-        # candidates have ratio >= threshold
+        assert "r2" not in record_ids
         for c in results:
             assert c.similarity_ratio >= 0.9
 
