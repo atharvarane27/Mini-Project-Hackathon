@@ -53,9 +53,7 @@ CurrencyCode = Annotated[str, StringConstraints(strip_whitespace=True, pattern=r
 MoneyMinor = StrictInt
 
 
-def compute_source_record_fingerprint(
-    source_system: str, external_ref: str, revision: int
-) -> str:
+def compute_source_record_fingerprint(source_system: str, external_ref: str, revision: int) -> str:
     """Deterministic SHA-256 fingerprint from source_system + external_ref + revision."""
     canonical_repr = f"{source_system.strip().upper()}:{external_ref.strip()}:{revision}"
     return hashlib.sha256(canonical_repr.encode("utf-8")).hexdigest()

@@ -18,7 +18,6 @@ from typing import Any
 from app.engines.identity.blocking import BlockingEngine
 from app.engines.identity.levenshtein import levenshtein_distance, levenshtein_similarity
 
-
 # ---------------------------------------------------------------------------
 # Resolution result dataclass
 # ---------------------------------------------------------------------------

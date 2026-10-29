@@ -143,3 +143,66 @@
 | InvertedIndex insert | O(t) | O(t) |
 | InvertedIndex candidates | O(t·k) | O(k) |
 | BlockingEngine (2-stage) | O(t + k·1) | O(k) |
+
+---
+
+## Phase P02: Supabase Schema, Migrations and Integrity
+
+- **Status**: Completed
+- **Date**: 2026-10-30
+- **Implemented Scope**:
+  1. 3NF SQLAlchemy 2 Declarative Models (`backend/app/db/models/*.py`):
+     - `base.py`: Base with UTC `DateTime(timezone=True)` type annotation mapping.
+     - `accounts.py`: `Branch`, `Account` with `UNIQUE(branch_id, masked_label)`.
+     - `ingestion.py`: `SourceSystem`, `IngestionJob`, `SourceRecord`, `SourceRecordTransaction` with `UNIQUE(source_system_id, external_ref, source_revision)`.
+     - `transactions.py`: `Transaction` with `CHECK(amount_minor > 0)` and indexes on `(occurred_at, sender_account_id)` and `(receiver_account_id, occurred_at)`.
+     - `journals.py`: `Journal`, `JournalLine` with `CHECK(debit >= 0 AND credit >= 0 AND ((debit > 0 AND credit == 0) OR (debit == 0 AND credit > 0)))`.
+     - `reconciliation.py`: `ReconciliationRun` with `CHECK(cutoff_at > start_at)`, `ReconciliationResult` with `UNIQUE(run_id, left_record_id, right_record_id)`.
+     - `findings.py`: `DetectorConfig` with `UNIQUE(detector_type, version)`, `Finding` with `UNIQUE(fingerprint)`, `FindingTransaction`.
+     - `rules.py`: `Rule` with `UNIQUE(name, version)`.
+     - `cases.py`: `AuditCase` with `CHECK(0 <= priority AND priority <= 100)` and index `(state, priority)`, `CaseFinding`, `CaseTask` with index `(case_id, state)`.
+     - `workflow.py`: `WorkflowTemplate` with `UNIQUE(name, version)`, `WorkflowTaskTemplate` with `UNIQUE(template_id, stable_key)`, `WorkflowEdge` with `CHECK(predecessor != successor)`.
+     - `auth.py`: `User`, `Role`, `UserRole`.
+     - `audit.py`: `ActivityLog` with index `(entity_type, entity_id, occurred_at)`.
+     - `outbox.py`: `OutboxEvent` with `UNIQUE(event_type, entity_id, payload_hash)` and index `(status, created_at)`.
+     - `__init__.py`: Full model registry exported.
+  2. Database Session Management (`backend/app/db/session.py`):
+     - Transaction-scoped session context manager `get_db_context()`.
+     - FastAPI dependency `get_db()`.
+     - Supabase connection pooling (`DATABASE_POOL_SIZE`, `DATABASE_MAX_OVERFLOW`, `DATABASE_POOL_TIMEOUT`, `DATABASE_POOL_RECYCLE`, `pool_pre_ping`).
+     - Supabase SSL configuration (`sslmode=require` enforcement).
+     - SQLite hermetic testing support with `PRAGMA foreign_keys=ON`.
+  3. Alembic Migrations:
+     - `backend/alembic/env.py`: Targets `Base.metadata`, supports offline `--sql` and online modes.
+     - `backend/alembic/script.py.mako`: Migration template.
+     - `backend/alembic.ini`: Configured with logging sections and script location.
+     - `backend/alembic/versions/0001_initial_schema.py`: Complete 26-table initial schema with `upgrade()` and clean reverse-order `downgrade()`.
+  4. SQL Infrastructure Scripts:
+     - `infra/supabase/bootstrap.sql`: Extensions (`uuid-ossp`, `pgcrypto`), `prevent_activity_log_tampering` trigger function, permission revocation.
+     - `infra/supabase/README.md`: Step-by-step project creation, connection strings, pooling, SSL, and migration runbook.
+     - `infra/local-postgres/init.sql`: Local fallback script with extensions and append-only trigger.
+  5. Idempotent Seed Data (`backend/app/db/seed.py`):
+     - 5 RBAC roles (`ADMIN`, `AUDITOR`, `REVIEWER`, `VIEWER`, `SYSTEM_WORKER`).
+     - 5 Demo users with Argon2 password hashes.
+     - 3 Source systems, 3 branches, 5 sample accounts.
+     - 4 Core detector configs (v1).
+     - Track 2 Dual Prerequisite Workflow Template (`Branch_Ledge_Clearance` + `External_Whistleblower_Audit` $\to$ `Escalation_Status`).
+     - Initial audit AST evaluation rule.
+  6. Documentation:
+     - `docs/schema-erd.md`: Mermaid ER diagram, 3NF normalization rules, constraint catalog, and PRD index mapping.
+
+### Test Results
+- `tests/integration/test_db_schema.py`: **11/11 PASSED**
+  - `test_migration_upgrade_and_downgrade_repeatability`: PASSED
+  - `test_reject_transaction_non_positive_amount`: PASSED (IntegrityError)
+  - `test_reject_journal_line_both_sides_positive`: PASSED (IntegrityError)
+  - `test_reject_audit_case_priority_out_of_bounds`: PASSED (IntegrityError)
+  - `test_reject_reconciliation_cutoff_before_start`: PASSED (IntegrityError)
+  - `test_reject_workflow_edge_self_loop`: PASSED (IntegrityError)
+  - `test_branch_delete_blocked_when_accounts_exist`: PASSED (RESTRICT)
+  - `test_account_delete_blocked_when_transactions_exist`: PASSED (RESTRICT)
+  - `test_source_records_idempotency_uniqueness`: PASSED (IntegrityError)
+  - `test_outbox_events_dedup_uniqueness`: PASSED (IntegrityError)
+  - `test_seed_database_repeatability`: PASSED (Idempotent 0 duplicates)
+- **Total Backend Tests: 92/92 PASSED**
+- **Total Frontend Tests: 7/7 PASSED** (Vitest), `tsc --noEmit` 0 errors.

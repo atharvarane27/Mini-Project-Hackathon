@@ -12,7 +12,6 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 
-
 # ---------------------------------------------------------------------------
 # Template enums
 # ---------------------------------------------------------------------------
@@ -65,7 +64,7 @@ class WorkflowEdge(BaseModel):
     successor_task_stable_key: str
 
     @model_validator(mode="after")
-    def reject_self_edge(self) -> "WorkflowEdge":
+    def reject_self_edge(self) -> WorkflowEdge:
         if self.predecessor_task_stable_key == self.successor_task_stable_key:
             raise ValueError(
                 f"Self-edge not allowed: task '{self.predecessor_task_stable_key}' "
@@ -109,7 +108,7 @@ class WorkflowTemplate(BaseModel):
     edges: tuple[WorkflowEdge, ...] = Field(default_factory=tuple)
 
     @model_validator(mode="after")
-    def validate_version_positive(self) -> "WorkflowTemplate":
+    def validate_version_positive(self) -> WorkflowTemplate:
         if self.version < 1:
             raise ValueError(f"Template version must be >= 1, got {self.version}")
         return self

@@ -12,7 +12,6 @@ from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
 from app.schemas.common import UtcDatetime
 
-
 # ---------------------------------------------------------------------------
 # Ingestion job lifecycle
 # ---------------------------------------------------------------------------

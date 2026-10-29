@@ -40,7 +40,7 @@ def levenshtein_distance(a: str, b: str) -> int:
                 curr[j] = prev[j - 1]
             else:
                 curr[j] = 1 + min(
-                    prev[j],      # deletion
+                    prev[j],  # deletion
                     curr[j - 1],  # insertion
                     prev[j - 1],  # substitution
                 )

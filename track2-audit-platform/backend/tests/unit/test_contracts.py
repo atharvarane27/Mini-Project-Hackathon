@@ -173,10 +173,20 @@ class TestTransactionContracts:
 
     def test_journal_balancing(self) -> None:
         l1 = JournalLine(
-            id="jl-1", journal_id="j-1", account_id="a1", debit_minor=5000, credit_minor=0, currency="INR"
+            id="jl-1",
+            journal_id="j-1",
+            account_id="a1",
+            debit_minor=5000,
+            credit_minor=0,
+            currency="INR",
         )
         l2 = JournalLine(
-            id="jl-2", journal_id="j-1", account_id="a2", debit_minor=0, credit_minor=5000, currency="INR"
+            id="jl-2",
+            journal_id="j-1",
+            account_id="a2",
+            debit_minor=0,
+            credit_minor=5000,
+            currency="INR",
         )
         journal = Journal(
             id="j-1",
@@ -188,7 +198,12 @@ class TestTransactionContracts:
         assert journal.is_balanced() is True
 
         l3_unbalanced = JournalLine(
-            id="jl-3", journal_id="j-2", account_id="a3", debit_minor=0, credit_minor=4000, currency="INR"
+            id="jl-3",
+            journal_id="j-2",
+            account_id="a3",
+            debit_minor=0,
+            credit_minor=4000,
+            currency="INR",
         )
         unbalanced_journal = Journal(
             id="j-2",
@@ -233,7 +248,9 @@ class TestDetectorContracts:
         )
         draft2 = FindingDraft(
             finding_type=FindingType.RECONCILIATION_MISMATCH,
-            fingerprint=compute_finding_fingerprint("RECONCILIATION_MISMATCH", "src-left", "src-right"),
+            fingerprint=compute_finding_fingerprint(
+                "RECONCILIATION_MISMATCH", "src-left", "src-right"
+            ),
             evidence_json=recon_ev.model_dump(),
             facts=FindingFacts(Reconciliation_Variance_Minor=5000, Severity="HIGH"),
             algorithm_version="recon-matcher-v1",
@@ -253,7 +270,12 @@ class TestDetectorContracts:
             fingerprint=compute_finding_fingerprint("CIRCULAR_FLOW", "t1", "t2", "t3"),
             evidence_json=circ_ev.model_dump(),
             transaction_ids=("t1", "t2", "t3"),
-            facts=FindingFacts(Circular_Flow_Detected=True, Cycle_Length=3, Cycle_Duration_Minutes=20, Severity="CRITICAL"),
+            facts=FindingFacts(
+                Circular_Flow_Detected=True,
+                Cycle_Length=3,
+                Cycle_Duration_Minutes=20,
+                Severity="CRITICAL",
+            ),
             algorithm_version="cycle-dfs-v1",
         )
 
@@ -273,7 +295,9 @@ class TestDetectorContracts:
             fingerprint=compute_finding_fingerprint("TRANSACTION_SPLITTING", "acc-s", "acc-r"),
             evidence_json=split_ev.model_dump(),
             transaction_ids=("t1", "t2", "t3"),
-            facts=FindingFacts(Splitting_Window_Sum_Minor=10500000, Splitting_Window_Count=3, Severity="HIGH"),
+            facts=FindingFacts(
+                Splitting_Window_Sum_Minor=10500000, Splitting_Window_Count=3, Severity="HIGH"
+            ),
             algorithm_version="sliding-window-v1",
         )
 

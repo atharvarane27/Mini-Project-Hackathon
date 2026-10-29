@@ -17,7 +17,6 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 
-
 # ---------------------------------------------------------------------------
 # Rule lifecycle
 # ---------------------------------------------------------------------------
@@ -46,12 +45,12 @@ class TokenKind(StrEnum):
     IDENTIFIER = "IDENTIFIER"
 
     # Comparison operators
-    EQ = "EQ"           # ==
-    NEQ = "NEQ"         # !=
-    LT = "LT"           # <
-    LTE = "LTE"         # <=
-    GT = "GT"           # >
-    GTE = "GTE"         # >=
+    EQ = "EQ"  # ==
+    NEQ = "NEQ"  # !=
+    LT = "LT"  # <
+    LTE = "LTE"  # <=
+    GT = "GT"  # >
+    GTE = "GTE"  # >=
 
     # Logical operators
     AND = "AND"
@@ -105,7 +104,7 @@ class AstNode(BaseModel):
     kind: AstNodeKind
     value: str | int | bool | None = None
     operator: str | None = None
-    children: tuple["AstNode", ...] = Field(default_factory=tuple)
+    children: tuple[AstNode, ...] = Field(default_factory=tuple)
 
 
 # ---------------------------------------------------------------------------
@@ -179,7 +178,7 @@ class Rule(BaseModel):
     activated_at: Any | None = None  # UtcDatetime | None
 
     @model_validator(mode="after")
-    def validate_version_positive(self) -> "Rule":
+    def validate_version_positive(self) -> Rule:
         if self.version < 1:
             raise ValueError(f"Rule version must be >= 1, got {self.version}")
         return self
@@ -206,7 +205,7 @@ class ExplanationNode(BaseModel):
 
     expression: str
     result: bool
-    children: tuple["ExplanationNode", ...] = Field(default_factory=tuple)
+    children: tuple[ExplanationNode, ...] = Field(default_factory=tuple)
 
 
 class RuleEvaluationResult(BaseModel):

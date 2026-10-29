@@ -6,7 +6,6 @@ Tests cover:
 - Phonetic similarity between name variants
 """
 
-import pytest
 
 from app.engines.identity.soundex import soundex, soundex_similarity
 

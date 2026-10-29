@@ -7,12 +7,10 @@ Tests cover:
 - Partition metric reporting (no all-pairs scan validation)
 """
 
-import pytest
 
-from app.engines.identity.blocking import BlockingEngine, BlockingPair
+from app.engines.identity.blocking import BlockingEngine
 from app.engines.identity.inverted_index import InvertedIndex
-from app.engines.identity.resolver import DuplicateCandidate, DuplicateResolver
-
+from app.engines.identity.resolver import DuplicateResolver
 
 # ---------------------------------------------------------------------------
 # InvertedIndex
@@ -122,7 +120,7 @@ class TestBlockingEngine:
         # soundex("Smith Corp") = S532; soundex("Wang Finance") = W552 — distinct codes
         # They share no common tokens either (no overlap), so blocking should return empty
         eng = self._make_engine()
-        eng.insert("r1", {"payee_name": "Smith Corp",   "amount_minor": 5000})
+        eng.insert("r1", {"payee_name": "Smith Corp", "amount_minor": 5000})
         eng.insert("r2", {"payee_name": "Wang Finance", "amount_minor": 5000})
         pairs = eng.blocking_candidates("r1", {"payee_name": "Smith Corp", "amount_minor": 5000})
         ids = {p.record_id_b for p in pairs}
@@ -171,14 +169,14 @@ class TestDuplicateResolver:
     def test_detects_similar_payee_names(self) -> None:
         resolver = self._make_resolver()
         resolver.add_record("r1", {"payee_name": "John Doe", "amount_minor": 50000})
-        resolver.add_record("r2", {"payee_name": "Jon Doe",  "amount_minor": 50000})
+        resolver.add_record("r2", {"payee_name": "Jon Doe", "amount_minor": 50000})
         results = resolver.resolve("r1", {"payee_name": "John Doe", "amount_minor": 50000})
         record_ids = {c.record_id_b for c in results}
         assert "r2" in record_ids
 
     def test_low_similarity_excluded(self) -> None:
         resolver = self._make_resolver(threshold=0.9)
-        resolver.add_record("r1", {"payee_name": "Alice",  "amount_minor": 100})
+        resolver.add_record("r1", {"payee_name": "Alice", "amount_minor": 100})
         resolver.add_record("r2", {"payee_name": "Alberto", "amount_minor": 100})
         results = resolver.resolve("r1", {"payee_name": "Alice", "amount_minor": 100})
         # "alice" vs "alberto" — low similarity — should NOT appear at 0.9 threshold
@@ -204,8 +202,8 @@ class TestDuplicateResolver:
     def test_sorted_by_similarity_desc(self) -> None:
         resolver = self._make_resolver(threshold=0.5)
         resolver.add_record("r1", {"payee_name": "Robert Smith"})
-        resolver.add_record("r2", {"payee_name": "Robert Smith"})   # identical
-        resolver.add_record("r3", {"payee_name": "Rupert Smyth"})   # close variant
+        resolver.add_record("r2", {"payee_name": "Robert Smith"})  # identical
+        resolver.add_record("r3", {"payee_name": "Rupert Smyth"})  # close variant
         results = resolver.resolve("r1", {"payee_name": "Robert Smith"})
         ratios = [c.similarity_ratio for c in results]
         assert ratios == sorted(ratios, reverse=True), "Results should be sorted desc"
@@ -236,7 +234,7 @@ class TestDuplicateResolver:
 
     def test_no_false_positive_no_overlap(self) -> None:
         resolver = self._make_resolver()
-        resolver.add_record("r1", {"payee_name": "Alpha Corp",  "amount_minor": 1000})
+        resolver.add_record("r1", {"payee_name": "Alpha Corp", "amount_minor": 1000})
         resolver.add_record("r2", {"payee_name": "Zeta Finance", "amount_minor": 9999})
         results = resolver.resolve("r1", {"payee_name": "Alpha Corp", "amount_minor": 1000})
         record_ids = {c.record_id_b for c in results}

@@ -11,7 +11,6 @@ from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 
 from app.schemas.common import MoneyMinor, UtcDatetime
 
-
 # ---------------------------------------------------------------------------
 # Reconciliation run enums
 # ---------------------------------------------------------------------------
@@ -55,7 +54,7 @@ class ReconciliationRunCreate(BaseModel):
     idempotency_key: str | None = None
 
     @model_validator(mode="after")
-    def validate_time_range(self) -> "ReconciliationRunCreate":
+    def validate_time_range(self) -> ReconciliationRunCreate:
         if self.cutoff_at <= self.start_at:
             raise ValueError("cutoff_at must be after start_at")
         return self
