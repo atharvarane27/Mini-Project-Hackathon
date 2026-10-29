@@ -21,3 +21,7 @@ test-results/
 *.log
 .DS_Store
 Thumbs.db
+
+# Large local dataset (265+ MiB after enrichment; exceeds GitHub's file limit)
+SFinDSet.csv
+SFinDSet.csv.augmenting

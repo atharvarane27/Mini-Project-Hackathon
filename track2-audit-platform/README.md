@@ -22,6 +22,7 @@ Project structure follows section 8 of the supplied PRD. Working name: AuditForg
 - infra/: Supabase and optional local PostgreSQL setup.
 - fixtures/: synthetic data placeholders.
 - docs/: architecture, API, schema, complexity, demo and decisions.
+- docs/dataset.md: augmented dataset fields, scenarios and usage constraints.
 - PRD.md: paragraph-text extraction of the Word document; original table formatting is not preserved.
 
 Planned stack: Next.js/TypeScript, FastAPI/Python 3.12, SQLAlchemy/Alembic and Supabase PostgreSQL. Financial audit decisions belong in the backend. Implement incrementally through PRD phases P0 to P8.
