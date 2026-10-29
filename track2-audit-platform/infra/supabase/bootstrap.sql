@@ -1,0 +1,1 @@
+-- Scaffold: minimal role grants / optional policies. Application schema belongs in Alembic.

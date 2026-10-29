@@ -1,0 +1,6 @@
+{
+ "name": "track2-audit-frontend",
+ "version": "0.1.0",
+ "private": true,
+ "description": "Structure only. Next.js dependencies and scripts will be added in P0."
+}

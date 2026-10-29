@@ -1,0 +1,1 @@
+-- Scaffold: optional offline PostgreSQL bootstrap. Use the same Alembic migrations as Supabase.

@@ -1,0 +1,2 @@
+# Scaffold: frontend, api, worker and optional local PostgreSQL profile pending.
+services: {}
