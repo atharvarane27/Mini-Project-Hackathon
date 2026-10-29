@@ -1,30 +1,132 @@
-# Track 2 Banking Audit Platform
+# AuditForge — Track 2 Banking Audit, Record Resolution & Rule-Driven Workflow Platform
 
-Project structure follows section 8 of the supplied PRD. Working name: AuditForge.
+AuditForge is a deterministic, multi-branch banking audit platform built for high-concurrency fraud pattern detection, automated ledger reconciliation, custom in-memory duplicate resolution, runtime AST rule compilation, and strict DAG workflow governance.
 
-**Status: structure only.** Modules, tests, frontend directories, fixtures and infrastructure files are placeholders. No application logic, dependencies, database connections, migrations or executable test cases have been implemented. The project is not runnable yet.
+## Technology Stack
 
-## Layout
+- **Backend**: Python 3.12, FastAPI, SQLAlchemy 2, Pydantic v2, Psycopg 3, Alembic, Pytest
+- **Frontend**: Next.js 15 (App Router), React 19, TypeScript, Tailwind CSS, Vitest
+- **Database**: Supabase PostgreSQL (Managed Primary RDBMS with 3NF schema, outbox, and strict RBAC)
+- **Containerization**: Docker Compose (`api`, single heap-owner `worker`, `frontend`, optional `local-postgres` profile)
 
-- backend/app/api/v1/: HTTP routes.
-- backend/app/db/: persistence session and relational models.
-- backend/app/schemas/: request and response contracts.
-- backend/app/core/: authentication, RBAC, errors, idempotency and audit writing.
-- backend/app/ingestion/: streaming import, normalization and canonicalization.
-- backend/app/engines/: identity, reconciliation, circular flows, splitting, rules, queue and workflow.
-- backend/app/services/: finding, case and outbox orchestration.
-- backend/app/worker/: worker entry point.
-- backend/tests/: unit, integration and concurrency stress placeholders.
-- backend/scripts/: seeding, fixture generation and benchmarking.
-- frontend/src/app/: Next.js App Router feature directories.
-- frontend/src/components/: reusable UI directories.
-- frontend/src/lib/: API client and types.
-- infra/: Supabase and optional local PostgreSQL setup.
-- fixtures/: synthetic data placeholders.
-- docs/: architecture, API, schema, complexity, demo and decisions.
-- docs/dataset.md: augmented dataset fields, scenarios and usage constraints.
-- PRD.md: paragraph-text extraction of the Word document; original table formatting is not preserved.
+## Architecture Overview
 
-Planned stack: Next.js/TypeScript, FastAPI/Python 3.12, SQLAlchemy/Alembic and Supabase PostgreSQL. Financial audit decisions belong in the backend. Implement incrementally through PRD phases P0 to P8.
+```text
+CSV / Feeds ---> [FastAPI Ingestion] ---> [Supabase PostgreSQL (Raw Records + Canonical Txns)]
+                        |
+                        +---> [Durable Outbox]
+                                    |
+                                    v
+       [Single Heap-Owner Worker Process (RAM Index + Heaps + DAGs)]
+                                    |
+       [Next.js Frontend] <--- [REST API /api/v1 (Typed Envelopes + RBAC)]
+```
 
-.gitkeep files preserve empty directories; __init__.py files establish Python packages. Dependencies and runnable commands will be added in P0.
+- **Algorithms**: Inverted index, Soundex, Levenshtein, Graph/DFS temporal cycles, sliding windows, AST lexer/parser, binary heap, and DAG topological sort are hand-written in `backend/app/engines/` without library black-boxes or SQL substitutes.
+- **Data Integrity**: Financial money stored in integer minor units (paise); timestamps persisted in UTC `timestamptz`; currency formatted as ISO 4217.
+
+## Quickstart
+
+### 1. Prerequisites
+
+- Python 3.12+
+- Node.js 20+ and npm 10+
+- Docker and Docker Compose (v2+)
+
+### 2. Environment Configuration
+
+Copy the example configuration to `.env`:
+
+```bash
+cp .env.example .env
+```
+
+Ensure placeholders are set for your database connection (`DATABASE_URL`). `.env` is blocked by `.gitignore` and must never be committed.
+
+### 3. Local Development (Native)
+
+```bash
+# Install dependencies
+make install
+
+# Run code quality gates
+make lint
+make typecheck
+make test
+
+# Start backend locally
+cd backend
+.venv/bin/uvicorn app.main:app --reload --port 8000
+
+# Start frontend locally
+cd frontend
+npm run dev
+```
+
+### 4. Docker Compose Deployment
+
+```bash
+# Validate compose configuration
+make config
+
+# Start full stack (api, worker, frontend) with primary Supabase DB
+make up
+
+# Alternatively start with optional local PostgreSQL container
+make up-local
+
+# Check API health
+curl http://localhost:8000/api/v1/health
+
+# Stop containers
+make down
+```
+
+## API Convention & Health Check
+
+All API responses follow the standard JSON envelope:
+
+```json
+{
+  "data": {
+    "status": "ok",
+    "app": "AuditForge",
+    "version": "0.1.0",
+    "timestamp": "2026-10-29T17:40:00.000000Z",
+    "db_backend": "supabase"
+  },
+  "meta": {},
+  "request_id": "7f7bc86e11894d0c9a410319520cb955"
+}
+```
+
+Error responses:
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Request input validation failed",
+    "details": []
+  },
+  "request_id": "7f7bc86e11894d0c9a410319520cb955"
+}
+```
+
+## Repository Structure
+
+```text
+track2-audit-platform/
+├── docs/                 # Architecture, API contract, ADRs, phase status
+├── backend/              # FastAPI application, engines, models, worker, tests
+│   ├── app/
+│   │   ├── engines/      # Pure in-memory deterministic algorithms
+│   │   ├── core/         # RBAC, logging, request-ID, errors, idempotency
+│   │   ├── db/           # SQLAlchemy 2 models & session management
+│   │   ├── api/v1/       # REST API endpoints
+│   │   └── worker/       # Dedicated single-heap-owner worker process
+├── frontend/             # Next.js 15 App Router interface & Tailwind styles
+├── infra/                # Supabase bootstrap & local PostgreSQL fallback
+├── fixtures/             # Deterministic synthetic banking datasets
+└── docker-compose.yml    # Container orchestration
+```

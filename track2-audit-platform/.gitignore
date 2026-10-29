@@ -21,6 +21,7 @@ test-results/
 *.log
 .DS_Store
 Thumbs.db
+*.tsbuildinfo
 
 # Large local dataset (265+ MiB after enrichment; exceeds GitHub's file limit)
 SFinDSet.csv
