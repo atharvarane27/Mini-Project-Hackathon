@@ -90,3 +90,56 @@
 - `a1a5b74`: feat(backend): configure Python 3.12, FastAPI, logging, health check, and worker
 - `3907415`: feat(frontend): setup Next.js 15, TypeScript, Tailwind, API client, and Vitest
 - `265cb8d`: feat(infra): configure docker-compose, local-postgres, CI workflow, Makefile, and docs
+
+---
+
+## Phase P01: Shared Contracts and Interface Specification
+
+- **Status**: Completed
+- **Date**: 2026-10-29
+- **Implemented Scope**:
+  1. Completed all 8 frozen Pydantic v2 schema modules:
+     - `common.py`: UserRole, OutboxStatus, UtcDatetime, MoneyMinor, CurrencyCode, deterministic SHA-256 fingerprints, ApiResponse, PaginatedResponse, ApiErrorResponse, OutboxEvent.
+     - `transactions.py`: SourceRecord, CanonicalTransaction, JournalLine, Journal, SourceRecordTransactionLink with amount > 0 and journal line side validation.
+     - `detectors.py`: FindingFacts (11 frozen fact names per PRD), DuplicateEvidence, ReconciliationEvidence, CircularFlowEvidence, SplittingEvidence, UnbalancedJournalEvidence, FindingDraft, Finding.
+     - `cases.py`: AuditCase (priority 0–100, row_version ≥ 1), WorkflowTask, CaseTransitionRequest, CaseClaimRequest.
+     - `ingestion.py`: IngestionJob lifecycle, IngestionJobCounts, IngestionRowError, SourceRecordEvent, CanonicalTransferEvent (PRD section 10 contracts).
+     - `reconciliation.py`: ReconciliationRun, ReconciliationResult (MATCHED/MISSING/MISMATCH/AMBIGUOUS/WITHIN_TOLERANCE), ReconciliationPolicy, ReconciliationSummary with cutoff_at > start_at validation.
+     - `rules.py`: Token, AstNode, Rule (DRAFT/ACTIVE/DEPRECATED), RuleValidationResult with typed RuleDiagnostic, RuleEvaluationResult with ExplanationNode tree (PRD section 10).
+     - `workflows.py`: WorkflowTemplate (versioned, immutable-after-activation), WorkflowEdge (self-edge rejection), DagValidationResult, CaseWorkflow runtime snapshot, TaskCompleteRequest.
+  2. `frontend/src/lib/types.ts` fully mirrored with TypeScript readonly interfaces for all schemas.
+  3. 14 contract unit tests covering: fingerprint determinism, UTC datetime validation, float money rejection, journal balance, detector serialization, case priority bounds, task stable key, frozen models.
+
+### Test Results
+- `tests/unit/test_contracts.py`: 14/14 PASSED
+- `tests/unit/test_health.py`: 3/3 PASSED
+- Frontend `tsc --noEmit`: 0 errors
+- Frontend `vitest`: 7/7 PASSED (`tests/contracts.test.ts` + `tests/health.test.ts`)
+
+---
+
+## Phase P02: Identity Engine (Duplicate Detection)
+
+- **Status**: Completed
+- **Date**: 2026-10-29
+- **Implemented Scope**:
+  1. `engines/identity/soundex.py`: Hand-written American Soundex (O(n), pure Python). Supports H/W adjacency transparency, vowel reset, non-ASCII stripping, 4-char padding.
+  2. `engines/identity/levenshtein.py`: Wagner-Fischer DP with single-row O(min(n,m)) space optimisation. Normalised similarity ratio in [0.0, 1.0].
+  3. `engines/identity/inverted_index.py`: Field-level InvertedIndex with O(t) insert, O(t·k) candidate retrieval. Avoids O(n²) all-pairs scan. Includes `partition_sizes()` for benchmark metrics.
+  4. `engines/identity/blocking.py`: Two-stage BlockingEngine — inverted-index token overlap (stage 1) + Soundex phonetic filter (stage 2). Returns deterministic sorted BlockingPair list.
+  5. `engines/identity/resolver.py`: End-to-end DuplicateResolver — blocking → Levenshtein scoring → threshold filter → sorted DuplicateCandidate list. Includes `partition_sizes()` and `total_records()` observability.
+
+### Test Results
+- `tests/unit/test_soundex.py`: 20/20 PASSED
+- `tests/unit/test_levenshtein.py`: 21/21 PASSED
+- `tests/unit/test_index.py`: 23/23 PASSED
+- **Total: 81/81 unit tests PASSED**
+
+### Algorithm Complexity (per PRD algorithm-complexity.md)
+| Algorithm | Time | Space |
+|-----------|------|-------|
+| Soundex | O(n) | O(1) |
+| Levenshtein | O(n·m) | O(min(n,m)) |
+| InvertedIndex insert | O(t) | O(t) |
+| InvertedIndex candidates | O(t·k) | O(k) |
+| BlockingEngine (2-stage) | O(t + k·1) | O(k) |
