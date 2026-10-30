@@ -1,7 +1,10 @@
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+DEFAULT_SECRET_KEY = "change-me-in-production-track2-audit-platform-secret-key"
 
 
 class Settings(BaseSettings):
@@ -14,25 +17,49 @@ class Settings(BaseSettings):
     )
 
     APP_NAME: str = "AuditForge"
-    APP_VERSION: str = "0.1.0"
-    ENVIRONMENT: Literal["development", "staging", "production", "test"] = "development"
-    DEBUG: bool = False
-    LOG_LEVEL: str = "INFO"
-    API_V1_PREFIX: str = "/api/v1"
+    APP_VERSION: s.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cant.en  !.envG:__pycache__/e
+*.py[cod]
+.EL.venv/
+v"Ivenv/  .pytI_.mypy_cache/
+r .ruff_i/v1"
 
-    # Database settings
-    DB_BACKEND: Literal["supabase", "postgres"] = "supabase"
-    DATABASE_URL: str = (
-        "postgresql+psycopg://postgres:postgres@localhost:5432/audit_forge?sslmode=prefer"
-    )
-    DATABASE_POOL_SIZE: int = 5
-    DATABASE_MAX_OVERFLOW: int = 5
+.coverage
+hashtmlcov/gsnode_mo_B.next/
+out/
+raout/
+padise"builos*.egg"]playwrightsetest-resTABASE_URL:*.log
+.DS_St  .  "poThumbs.d+p*.tsbuil/p
+# Large locgre*.zip
+SFinDSet.zip
+SFinDSet.csv
+SFinDSet.cs"
+SFin)
+SFinDSet.csE_SFinDSet.csinEOF
+
+cat > backend/app_OcaRFLOW: int = 5
     DATABASE_POOL_TIMEOUT: int = 30
     DATABASE_POOL_RECYCLE: int = 1800
 
     # Security
-    SECRET_KEY: str = "change-me-in-production-track2-audit-platform-secret-key"
+    SECRET_KEY: str = DEFAULT_SECRET_KEY
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
+
+    @model_validator(mode="after")
+    def validate_environment_secret(self) -> "Settings":
+        if self.ENVIRONMENT != "development" and self.SECRET_KEY == DEFAULT_SECRET_KEY:
+            raise ValueError(
+                "SECRET_KEY must be set to a non-default value outside the development environment."
+            )
+        return self
 
 
 @lru_cache

@@ -23,6 +23,8 @@ test-results/
 Thumbs.db
 *.tsbuildinfo
 
-# Large local dataset (265+ MiB after enrichment; exceeds GitHub's file limit)
+# Large local dataset artifacts and archives
+*.zip
+SFinDSet.zip
 SFinDSet.csv
 SFinDSet.csv.augmenting
