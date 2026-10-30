@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import json
+import logging
+import signal
 from collections.abc import Callable
 from datetime import datetime, timedelta
+from threading import Event
 
 from app.engines.queue.claim_service import ClaimService
 from app.engines.queue.synchronized_queue import SynchronizedCaseQueue
@@ -48,3 +52,24 @@ class CaseWorker:
 
     def shutdown(self) -> None:
         self.queue.shutdown()
+
+
+def main() -> None:
+    """Keep the dedicated worker process alive until persistence is composed."""
+
+    logging.basicConfig(level="INFO", format="%(message)s")
+    logger = logging.getLogger("auditforge.worker")
+    stopped = Event()
+
+    def request_stop(_signum: int, _frame: object) -> None:
+        stopped.set()
+
+    signal.signal(signal.SIGINT, request_stop)
+    signal.signal(signal.SIGTERM, request_stop)
+    logger.info(json.dumps({"event": "worker_started", "mode": "single-owner"}))
+    stopped.wait()
+    logger.info(json.dumps({"event": "worker_stopped"}))
+
+
+if __name__ == "__main__":
+    main()

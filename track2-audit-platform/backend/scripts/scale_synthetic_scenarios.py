@@ -77,24 +77,21 @@ def generate_rows() -> Iterator[dict[str, str]]:
     # 8,000 rows: 4,000 fuzzy pairs with spelling and description changes.
     for case in range(4_000):
         source, destination = account(2, case), account(2, case, 1)
-        common = dict(
-            account_number=source,
-            amount=f"{20000 + case}.00",
-            source=source,
-            destination=destination,
-            case=case,
-            scenario="FUZZY_DUPLICATE",
-            expected="DUPLICATE_FUZZY",
-        )
         yield make_row(
-            f"SYN-BULK-FUZZ-{case:05d}-A", name=f"Christopher Johnson {case}",
+            f"SYN-BULK-FUZZ-{case:05d}-A", source,
+            name=f"Christopher Johnson {case}", amount=f"{20000 + case}.00",
             date=timestamp(case), description=f"Education payment Christopher Johnson {case}",
-            external_reference=f"BULK-FUZZ-A-{case:05d}", ledger="BRANCH_LEDGER_A", **common,
+            source=source, destination=destination, case=case,
+            scenario="FUZZY_DUPLICATE", expected="DUPLICATE_FUZZY",
+            external_reference=f"BULK-FUZZ-A-{case:05d}", ledger="BRANCH_LEDGER_A",
         )
         yield make_row(
-            f"SYN-BULK-FUZZ-{case:05d}-B", name=f"Cristopher Jonson {case}",
+            f"SYN-BULK-FUZZ-{case:05d}-B", source,
+            name=f"Cristopher Jonson {case}", amount=f"{20000 + case}.00",
             date=timestamp(case, 3), description=f"Educaton paymnt Cristopher Jonson {case}",
-            external_reference=f"BULK-FUZZ-B-{case:05d}", ledger="BRANCH_LEDGER_B", **common,
+            source=source, destination=destination, case=case,
+            scenario="FUZZY_DUPLICATE", expected="DUPLICATE_FUZZY",
+            external_reference=f"BULK-FUZZ-B-{case:05d}", ledger="BRANCH_LEDGER_B",
         )
 
     # 4,000 rows: 2,000 source/destination inversion pairs.

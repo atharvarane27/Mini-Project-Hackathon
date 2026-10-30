@@ -1,1 +1,20 @@
-[]
+[
+  {
+    "finding_type": "CIRCULAR_FLOW",
+    "scenario": "three_account_cycle",
+    "transaction_ids": ["CIRC-001", "CIRC-002", "CIRC-003"],
+    "expected_count": 1
+  },
+  {
+    "finding_type": "SPLITTING_PATTERN",
+    "scenario": "within_60_minutes",
+    "transaction_ids": ["SPLIT-1", "SPLIT-2", "SPLIT-3"],
+    "expected_count": 1
+  },
+  {
+    "finding_type": "SPLITTING_PATTERN",
+    "scenario": "inclusive_boundary",
+    "transaction_ids": ["BOUNDARY-1", "BOUNDARY-2", "BOUNDARY-3"],
+    "expected_count": 1
+  }
+]

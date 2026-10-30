@@ -120,5 +120,5 @@ def test_large_sparse_graph_search_stays_bounded() -> None:
         graph, CycleSearchLimits(max_hops=6, max_window_minutes=60)
     )
     assert result.candidates == ()
-    assert result.stats.maximum_depth <= 5
+    assert result.stats.maximum_depth <= 6
     assert result.stats.edges_examined < 12_100

@@ -1,1 +1,5 @@
 
+transaction_id,source_id,external_reference,sender_account_id,receiver_account_id,amount_minor,currency,occurred_at,status
+clr-101,clearing,T101,A001,A002,100000,INR,2026-10-29T10:00:00Z,POSTED
+clr-102,clearing,T102,A003,A004,2450000,INR,2026-10-29T10:05:00Z,POSTED
+clr-105,clearing,T105,A009,A010,90000,INR,2026-10-29T10:15:00Z,POSTED

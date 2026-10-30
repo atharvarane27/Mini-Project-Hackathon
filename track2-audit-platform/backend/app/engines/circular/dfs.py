@@ -59,6 +59,7 @@ def find_cycle_candidates(
             for edge in graph.outgoing(account_id):
                 edges_examined += 1
                 next_depth = len(path_edges) + 1
+                maximum_depth = max(maximum_depth, next_depth)
                 if next_depth > configured.max_hops:
                     hop_prunes += 1
                     continue
@@ -95,10 +96,7 @@ def find_cycle_candidates(
 
         visit(start)
 
-    candidates = tuple(
-        found[key]
-        for key in sorted(found)
-    )
+    candidates = tuple(found[key] for key in sorted(found))
     return CycleSearchResult(
         candidates,
         TraversalStats(

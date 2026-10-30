@@ -3,8 +3,65 @@
 from __future__ import annotations
 
 from datetime import datetime
+from collections.abc import Mapping
+from enum import StrEnum
+from typing import Any
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
+
+from .common import FrozenContract, StableId, UtcDateTime
+
+
+class FindingType(StrEnum):
+    DUPLICATE_CANDIDATE = "DUPLICATE_CANDIDATE"
+    RECONCILIATION_MISMATCH = "RECONCILIATION_MISMATCH"
+    CIRCULAR_FLOW = "CIRCULAR_FLOW"
+    SPLITTING_PATTERN = "SPLITTING_PATTERN"
+
+
+FINDING_FACT_NAMES = frozenset(
+    {
+        "Similarity_Score",
+        "Reconciliation_Variance_Minor",
+        "Allowed_Variance_Minor",
+        "Balance_Anomaly_Flag",
+        "Circular_Flow_Detected",
+        "Cycle_Length",
+        "Cycle_Duration_Minutes",
+        "Initial_Amount_Minor",
+        "Minimum_Amount_Minor",
+        "Maximum_Amount_Minor",
+        "Splitting_Window_Sum_Minor",
+        "Splitting_Window_Count",
+        "Splitting_Window_Duration_Minutes",
+        "Splitting_Threshold_Minor",
+        "Transaction_Velocity",
+    }
+)
+
+
+class FindingContract(FrozenContract):
+    finding_id: StableId
+    finding_type: FindingType
+    fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    transaction_ids: tuple[StableId, ...]
+    facts: Mapping[str, Any]
+    evidence: Mapping[str, Any]
+    detector_config_version: int = Field(strict=True, ge=1)
+    algorithm_version: StableId
+    status: StableId = "FLAGGED_FOR_REVIEW"
+    created_at: UtcDateTime
+
+    @model_validator(mode="after")
+    def validate_identity(self) -> FindingContract:
+        if not self.transaction_ids or len(set(self.transaction_ids)) != len(
+            self.transaction_ids
+        ):
+            raise ValueError("transaction_ids must be non-empty and unique")
+        unknown = set(self.facts) - FINDING_FACT_NAMES
+        if unknown:
+            raise ValueError(f"unknown finding fact names: {sorted(unknown)}")
+        return self
 
 
 class SplittingRunRequest(BaseModel):

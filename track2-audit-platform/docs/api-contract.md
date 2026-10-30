@@ -2,6 +2,88 @@
 
 Reserve /api/v1 for backend routes. See PRD section 7 for endpoints, envelopes, authentication, CSRF and errors.
 
+## P01 frozen shared contract
+
+All `/api/v1` successes use `{ "data": ..., "meta": {...}, "request_id":
+"..." }`. Errors use `{ "error": { "code": "...", "message": "...",
+"details": {...} }, "request_id": "..." }`. List metadata contains integer
+`offset`, `limit` (1–500), and `total`. Timestamps are timezone-aware and
+serialized as ISO 8601 UTC. Money is an integer number of minor units; JSON
+floating-point money is rejected. Currency is an uppercase ISO 4217 code.
+
+Mutation requests use an `Idempotency-Key` of 8–128 safe ASCII characters. A
+replay with the same canonical payload returns the original result; a changed
+payload under that key returns 409 `IDEMPOTENCY_CONFLICT`. Fingerprints are
+SHA-256 over namespace plus canonical JSON with sorted keys. Floats are never
+accepted as fingerprint inputs.
+
+Example canonical transaction:
+
+```json
+{
+  "transaction_id": "txn-001",
+  "source_record_ids": ["source-001", "source-002"],
+  "sender_account_id": "account-a",
+  "receiver_account_id": "account-b",
+  "amount_minor": 125050,
+  "currency": "INR",
+  "occurred_at": "2026-10-30T08:00:00Z",
+  "transaction_type": "TRANSFER",
+  "status": "POSTED"
+}
+```
+
+Multiple source records may map to one canonical transaction. They are evidence
+copies/revisions and must not double-count the economic event.
+
+### Role matrix
+
+| Action | ADMIN | AUDITOR | REVIEWER | VIEWER |
+|---|---:|---:|---:|---:|
+| Read cases/findings/activity | yes | yes | yes | yes |
+| Claim/investigate case | yes | yes | no | no |
+| Review case transition | yes | yes | yes | no |
+| Manage rules/workflows/users | yes | no | no | no |
+
+Maker-checker policies may require a different reviewer from the actor who
+created the sensitive change. Outbox lifecycle is `PENDING -> PROCESSING ->
+PUBLISHED`; bounded failures move an event to `DEAD_LETTER`, while an expired
+processing lease permits idempotent replay.
+
+Finding fact names are fixed in `schemas/detectors.py`, including reconciliation
+variance/anomaly, circular detection/length, splitting sum/count/duration, and
+similarity score. Every detector serializes the same Finding contract.
+
+## P03 ingestion jobs
+
+`POST /api/v1/ingestion/jobs` accepts a CSV file, `source_system`, and an
+`Idempotency-Key`, returning HTTP 202 with job counts and status. Replaying the
+same key and file returns the original job; changing the file under that key
+returns HTTP 409. `GET /api/v1/ingestion/jobs/{job_id}` returns durable progress,
+accepted/duplicate/rejected counts, and the last committed row.
+
+Rows are streamed in bounded batches. Invalid rows are quarantined with stable
+diagnostic codes while valid rows in the same batch continue processing.
+
+## P04 canonical transactions
+
+`GET /api/v1/transactions` lists unique canonical economic events with optional
+`account_id` and exact `reference` filters plus bounded pagination. Responses
+retain every linked source-record ID. Transport replays add provenance but do
+not create another downstream transaction. Corrections create linked reversal
+events and never overwrite the original transaction or journal.
+
+## P06 duplicate evidence
+
+`GET /api/v1/duplicates` returns deterministic comparison evidence and accepts
+optional `classification`, `offset`, and `limit` filters. Classifications are
+`EXACT`, `CANDIDATE`, `AMBIGUOUS`, and `NON_MATCH`. Scores are deterministic
+rule points and edit distances—not probabilities or ML confidence.
+
+Every result preserves both source record IDs, compared attributes, reasons,
+and algorithm version. The resolver never merges or deletes records and only
+compares candidates supplied by the P05 blocking/index boundary.
+
 ## P09 circular-flow detector
 
 `POST /api/v1/detectors/circular/runs` validates P08 cycle candidates against a

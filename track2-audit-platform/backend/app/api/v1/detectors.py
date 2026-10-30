@@ -6,8 +6,9 @@ policy, transfer-snapshot, and repository adapters.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from datetime import datetime
+from typing import Protocol
 from uuid import uuid4
 
 from fastapi import APIRouter, Header, HTTPException, Query, status
@@ -33,8 +34,47 @@ CircularPolicyLoader = Callable[[int], CircularPolicy]
 CycleCandidateLoader = Callable[[datetime, datetime, str], Iterable[CycleCandidate]]
 
 
+class FindingReader(Protocol):
+    def list_findings(
+        self,
+        *,
+        finding_type: str | None = None,
+        offset: int = 0,
+        limit: int = 100,
+    ) -> Sequence[object]: ...
+
+
 def _request_id(value: str | None) -> str:
     return value.strip() if value and value.strip() else str(uuid4())
+
+
+def create_findings_router(*repositories: FindingReader) -> APIRouter:
+    router = APIRouter()
+
+    @router.get("/findings")
+    def list_all_findings(
+        finding_type: str | None = Query(default=None),
+        offset: int = Query(default=0, ge=0),
+        limit: int = Query(default=100, ge=1, le=500),
+        request_id_header: str | None = Header(default=None, alias="X-Request-ID"),
+    ) -> dict[str, object]:
+        merged: list[object] = []
+        for repository in repositories:
+            merged.extend(
+                repository.list_findings(
+                    finding_type=finding_type, offset=0, limit=500
+                )
+            )
+        unique = {getattr(item, "finding_id"): item for item in merged}
+        ordered = [unique[key] for key in sorted(unique)]
+        page = ordered[offset : offset + limit]
+        return {
+            "data": [getattr(item, "as_dict")() for item in page],
+            "meta": {"offset": offset, "limit": limit, "returned": len(page), "total": len(ordered)},
+            "request_id": _request_id(request_id_header),
+        }
+
+    return router
 
 
 def create_splitting_router(

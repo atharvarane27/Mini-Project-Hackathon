@@ -1,1 +1,6 @@
 
+transaction_id,source_id,external_reference,sender_account_id,receiver_account_id,amount_minor,currency,occurred_at,status
+int-101,internal,T101,A001,A002,100000,INR,2026-10-29T10:00:00Z,POSTED
+int-102,internal,T102,A003,A004,2500000,INR,2026-10-29T10:05:00Z,POSTED
+int-103,internal,T103,A005,A006,75000,INR,2026-10-29T10:10:00Z,POSTED
+int-104,internal,T104,A007,A008,125000,INR,2026-10-30T10:00:00Z,POSTED

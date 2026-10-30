@@ -1,5 +1,47 @@
 # Algorithm complexity
 
+## P03 bounded ingestion
+
+CSV parsing and normalization are `O(N)` in the number of rows. The reader holds
+at most the configured batch size `B`, so parsing memory is `O(B + F)`, where
+`F` is the largest permitted field. Indexed source-identity and idempotency
+lookups are expected `O(1)` per row. The in-memory adapter retained for tests
+stores accepted records; the production database adapter commits each batch.
+
+## P04 canonicalization
+
+Canonical/source identity and exact economic-event lookup are expected `O(1)`
+under indexed/hash-map assumptions. Journal construction is constant-size for a
+two-sided transfer. Listing is `O(N log N)` in the reference adapter because it
+sorts in memory; P02 must provide indexed database pagination.
+
+## P05 custom inverted index
+
+Insertion/removal touches `K` deterministic keys and is expected `O(K)` under
+hash-map assumptions. Lookup visits posting lists for the query keys rather
+than all records. Cost is `O(K + P)`, where `P` is visited postings, capped by
+the configured bucket size. Worst-case skew can create large buckets, so skewed
+buckets are skipped and counted; unconditional `O(N log N)` is not claimed.
+Storage is `O(N*K)` postings plus record references.
+
+## P06 duplicate classification
+
+For strings of lengths `A` and `B`, the custom bounded Levenshtein operation is
+`O(A*B)` worst-case time and `O(min(A,B))` memory, with length and row-bound
+early exits. The resolver never creates all `N²` record pairs: it evaluates
+only `K` candidates returned by P05 blocking, with an explicit per-record bucket
+cap. A balanced 1,000-record fixture performs 1,000 candidate comparisons
+instead of 1,000,000 possible ordered pairs.
+
+## P08 circular graph search
+
+Graph construction is `O(E)` space and time, excluding deterministic adjacency
+ordering. Bounded simple-cycle DFS is exponential in the configured hop limit
+in the worst case: `O(V * B^H)`, where `B` is branching factor and `H` is the
+maximum hops. The fixed hop, time-window and candidate caps bound practical
+work; recursion memory is `O(H)`. Traversal statistics expose actual examined
+edges and pruning rather than claiming unbounded cycle enumeration is cheap.
+
 ## P09 circular temporal validation
 
 Each candidate with `L` transfers is validated in `O(L)` time and `O(L)`
@@ -34,7 +76,9 @@ raises a controlled error rather than discarding financial data. Emitting a
 candidate copies its contributing IDs, so output construction costs `O(W)` per
 candidate; P11 owns deterministic overlap suppression and finding fingerprints.
 
-Measured benchmarks remain a P20 deliverable.
+Measured P20 results are summarized in the final section and preserved as JSON
+in `docs/benchmark-results.json`.
+
 
 ## P11 splitting findings and orchestration
 
@@ -122,3 +166,24 @@ Adjacency construction and DFS cycle detection are `O(V + E)`. Kahn ordering
 is `O((V + E) log V)` because a lexical heap makes equal-choice output
 deterministic. Instance storage is `O(V)`; dependency unlock checks are bounded
 by the template edge set and run atomically in the repository transaction.
+
+## P20 measured benchmark evidence
+
+Measurements were taken on Windows 11 with CPython 3.13.9 using three repeats.
+They are development-machine observations, not production latency guarantees.
+Wall time is the median; memory is the maximum `tracemalloc` peak. Input
+construction is excluded where workloads reuse immutable prepared inputs.
+
+| Algorithm | Input/operations | Median ms | Peak KiB |
+|---|---:|---:|---:|
+| Inverted index | 2,000 / 2,100 | 125.233 | 1,682.3 |
+| Bounded edit distance | 2,000 / 2,000 | 945.078 | 6.2 |
+| Bounded sparse cycle search | 2,000 / 2,000 | 331.423 | 306.2 |
+| Sliding windows | 3,000 / 3,000 | 60.211 | 656.0 |
+| Lexer and parser | 1,000 / 1,000 | 826.860 | 22.8 |
+| Binary heap | 2,000 / 4,000 | 21.655 | 119.2 |
+| Topological sort | 2,000 / 3,999 | 43.903 | 1,094.6 |
+
+Exact workload assumptions, minimum timings, result sizes and environment are
+preserved in `docs/benchmark-results.json`. Regenerate results on the deployment
+target; Python 3.12 remains the declared project runtime.

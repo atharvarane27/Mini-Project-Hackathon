@@ -1,5 +1,252 @@
 # Phase status
 
+## P00 — Repository and development environment
+
+Status: Implemented on 30 October 2026; Docker runtime verification is pending
+because Docker is not installed on this workstation.
+
+### Delivered
+
+- Python 3.12 FastAPI/SQLAlchemy/Psycopg/Alembic dependency configuration.
+- Runnable FastAPI application factory and `/api/v1/health` endpoint.
+- Request IDs, structured JSON request logs and controlled internal errors.
+- Environment-only settings with safe non-secret defaults.
+- Dedicated single-owner worker process entrypoint and graceful signal shutdown.
+- API, worker and optional local PostgreSQL Docker Compose services.
+- Backend Dockerfile, Make targets and GitHub Actions verification workflow.
+- Updated architecture, environment template and development instructions.
+- Health and request-ID integration test.
+
+### Acceptance evidence
+
+- Health test — 1 passed.
+- Full backend suite — 167 passed with one dependency deprecation warning.
+- Ruff passed across app/tests; strict mypy passed across 91 source files.
+- Compose YAML parsed and required `api`, `worker`, `postgres` services exist.
+- `docker compose config` and container startup could not run because the Docker
+  CLI is unavailable locally; run `make compose-config` after installing Docker.
+
+Frontend runtime/UI setup remains deferred under the user's explicit instruction
+to wait for their Phase 19 design. No secrets or database migration were added.
+Commit hash: pending team commit.
+
+## P01 — Shared contracts, event identity and interface specification
+
+Status: Implemented and locally verified on 30 October 2026.
+
+### Delivered
+
+- Frozen SourceRecord, CanonicalTransaction, JournalLine, Finding, AuditCase,
+  OutboxEvent and WorkflowTask Python contracts.
+- Matching readonly TypeScript interfaces and branded money/timestamp helpers.
+- Strict integer minor units, ISO currency and timezone-aware UTC validation.
+- Stable namespace-aware SHA-256 fingerprints that reject floating point.
+- Shared success/error envelopes, pagination and idempotency-key rules.
+- Fixed finding fact registry, role matrix and outbox lifecycle.
+- Documented authoritative flow, duplicate-copy semantics and graph distinction.
+
+### Acceptance evidence
+
+- Focused contract suite — 8 passed.
+- Full backend suite — 175 passed with one dependency deprecation warning.
+- TypeScript contracts compile with `tsc --noEmit`.
+- Missing IDs, floating-point money, malformed timestamps, unknown facts and
+  unsafe fingerprint values are rejected.
+- Reconciliation, circular and splitting examples use one Finding contract.
+
+No database migration was added. Commit hash: pending team commit.
+
+## P02 — Supabase schema, migrations and integrity
+
+Status: Implemented and locally verified on 30 October 2026.
+
+### Delivered
+
+- 26-table normalized SQLAlchemy schema covering reference, financial,
+  detection, case/workflow, security, audit and outbox domains.
+- Restrictive foreign keys preserving financial and audit evidence.
+- Uniqueness, CHECK constraints and operational indexes.
+- Transaction-scoped session factory with Supabase pool/SSL URL support.
+- Initial Alembic migration with ADMIN/AUDITOR/REVIEWER/VIEWER seed roles.
+- Matching local PostgreSQL migration path.
+- Supabase append-only activity grants and mutation-rejection trigger.
+
+### Acceptance evidence
+
+- Focused schema/session suite — 4 passed.
+- Full backend suite — 204 passed with one dependency deprecation warning.
+- Alembic upgrade and downgrade executed successfully; four roles were seeded.
+- Ruff passed for app/tests/migrations; strict mypy passed across 92 sources.
+- Restrictive provenance and outbox/source uniqueness constraints were tested.
+
+Live Supabase execution remains environment-dependent because no credentials
+were supplied; the verified migration is identical for Supabase PostgreSQL and
+the local fallback. Commit hash: pending team commit.
+
+## P03 — Bounded CSV ingestion, validation and quarantine
+
+Status: Implemented and locally verified on 30 October 2026.
+
+### Delivered
+
+- Streaming CSV reader with configurable bounded batches and field limits.
+- Normalization to UTC timestamps and integer minor-unit money.
+- Stable validation diagnostics and row-level quarantine without batch loss.
+- File, row, payload-hash and source-revision provenance.
+- Idempotent imports, source identity uniqueness and interrupted-job restart.
+- Upload and job-status API contracts plus four ingestion persistence tables.
+- Deterministic fixture generator for large test files.
+
+### Acceptance evidence
+
+- Focused P03/P04 suite — 13 passed.
+- Full backend suite — 211 passed with one dependency deprecation warning.
+- A 10,005-row fixture completed in batches of at most 250 rows.
+- Repeat imports created no duplicate source identities; malformed rows were
+  quarantined with stable codes and their jobs remained queryable.
+- Alembic upgrade/downgrade through `0002_ingestion` completed successfully.
+- Ruff and strict mypy passed for all Phase 3 files.
+
+Live Supabase credentials are not required for local verification. The
+production deployment will use the same PostgreSQL migration and requires a
+Supabase database URL when it is connected. Commit hash: pending team commit.
+
+## P04 — Canonical financial events and double-entry journal integrity
+
+Status: Implemented against the P03 accepted-record boundary and locally
+verified on 30 October 2026.
+
+### Delivered
+
+- Immutable accepted-source, canonical-transfer and journal-posting contracts.
+- Deterministic canonical/source/economic fingerprints and stable IDs.
+- Source-record provenance links with exact replay idempotency.
+- Changed-payload source-revision conflict detection.
+- Ambiguous economic copies retained and marked for review.
+- Reversible corrections linked to originals without mutation.
+- Balanced debit/credit journal validation with integer minor units.
+- Unique downstream snapshot and paginated transaction search API.
+
+### Acceptance evidence
+
+- Focused P04–P06 integration suite — 16 passed.
+- Full backend suite — 200 passed with one dependency deprecation warning.
+- Repeated transport copies produce one canonical downstream event.
+- Unbalanced journals are rejected while original postings remain traceable.
+- Ruff and strict mypy passed across all backend source files.
+
+P02 models and the P03 accepted-record boundary are now implemented. Phase 4
+uses a transactionally faithful reference repository pending the production
+Supabase adapter. No P04 migration was added. Commit hash: pending team commit.
+
+## P05 — Custom low-memory inverted index and phonetic blocking
+
+Status: Implemented and locally verified on 30 October 2026.
+
+### Delivered
+
+- Application-owned blocking-key to record-ID posting lists.
+- Exact reference/account/date/amount-band/currency keys.
+- Custom Unicode-aware Soundex partitions for party names.
+- Incremental insert, update, removal and atomic rebuild.
+- Explicit locking for concurrent inserts and searches.
+- Bucket skew limits, posting-visit counts, memory estimates and latency metrics.
+- Direct Phase 6 `CandidateProvider` compatibility.
+
+### Acceptance evidence
+
+- Focused P05/P06 integration suite — 12 passed.
+- Full backend suite — 194 passed with one dependency deprecation warning.
+- Incremental and rebuilt snapshots match.
+- 20 concurrent workers insert/search 2,000 records without posting corruption.
+- Lookup visits posting lists only; no all-record pair generation exists.
+- Ruff and strict mypy passed across all identity engine modules.
+
+P04 durable record loading remains pending; `rebuild()` accepts its future
+immutable record stream. No migration or API change was added.
+Commit hash: pending team commit.
+
+## P06 — Edit-distance duplicate classification and evidence
+
+Status: Implemented against the P05 candidate-provider boundary and locally
+verified on 30 October 2026.
+
+### Delivered
+
+- Unicode/case/separator normalization and custom bounded Levenshtein distance.
+- Deterministic EXACT, CANDIDATE, AMBIGUOUS and NON_MATCH rules.
+- Explicit reversal, inverted-side and recurring-transaction false-match guards.
+- Auditable evidence with record links, attributes, distances, score reasons
+  and algorithm version.
+- Candidate-provider protocol enforcing blocked comparisons and bucket bounds.
+- Thread-safe evidence repository and filtered `GET /duplicates` route.
+- Typo, reversal, ambiguity, skew and balanced-performance tests.
+
+### Acceptance evidence
+
+- Focused P06 suite — 13 passed.
+- Full backend suite — 188 passed with one dependency deprecation warning.
+- Ruff and strict mypy passed across all 91 backend source files.
+- The 1,000-record balanced fixture performs 1,000 comparisons, far below N².
+- Ambiguous candidates preserve all source links; no record is merged/deleted.
+
+P06 consumes the implemented P05 `CandidateProvider` boundary without coupling
+the resolver to a persistence implementation. No database migration was added.
+
+## P07 — Automated ledger reconciliation
+
+Status: Implemented and locally verified on 30 October 2026.
+
+### Delivered
+
+- Deterministic reference-first matching with a bounded composite-key fallback.
+- Strict one-to-one consumption and explicit ambiguous many-to-one evidence.
+- MATCHED, AMOUNT_MISMATCH, FIELD_MISMATCH, INTERNAL_ONLY,
+  COUNTERPART_ONLY, PENDING_LATE, AMBIGUOUS and UNBALANCED_JOURNAL results.
+- Currency-aware double-entry journal balance validation.
+- Stable run keys, input digests, retry idempotency and conflict detection.
+- POST run and paginated GET result endpoints with validated contracts.
+- Non-empty internal and counterpart ledger fixtures.
+
+### Acceptance evidence
+
+- Focused reconciliation suite — 5 passed.
+- Full backend suite — 221 passed with one dependency deprecation warning.
+- INR 25,000 versus INR 24,500 produces a 50,000 minor-unit variance.
+- Duplicate references remain AMBIGUOUS and never silently multi-match.
+- Same checkpoint/input replays one logical run; changed input conflicts.
+- Ruff and strict mypy pass for the P07 implementation.
+
+The composed runtime exposes the reconciliation endpoints. Loading canonical
+ledger snapshots from Supabase belongs to the production persistence connection.
+
+## P08 — Circular transfer graph construction and cycle search
+
+Status: Implemented and locally verified on 30 October 2026.
+
+### Delivered
+
+- Custom directed transfer multigraph with distinct parallel edges.
+- Posted-transfer filtering and canonical transaction conflict detection.
+- Bounded DFS recursion-stack simple-cycle search.
+- Maximum-hop, maximum-window and maximum-candidate limits.
+- Candidate deduplication using canonical transaction IDs.
+- Traversal statistics covering examined edges, pruning and depth.
+- Self-loop, parallel-edge, acyclic, true-cycle, invalid-time and 2,000-edge
+  sparse-graph tests.
+- Deterministic circular-transfer fixture.
+
+### Acceptance evidence
+
+- Focused P08 suite — 7 passed; combined P08/P09 suite — 16 passed.
+- Full backend suite — 166 passed with one dependency deprecation warning.
+- Ruff and strict mypy passed across five circular engine modules.
+- `A -> B -> C -> A` yields one candidate; `A -> B -> C -> D` yields none.
+- Parallel transfers remain distinct and hop/window limits are enforced.
+
+No database migration or API change was required. P08 emits the immutable
+candidate contract consumed by P09. Commit hash: pending team commit.
+
 ## P09 — Circular-flow temporal validation and audit findings
 
 Status: Implemented against the P08 candidate boundary and locally verified on
@@ -26,10 +273,9 @@ Status: Implemented against the P08 candidate boundary and locally verified on
 - Valid chronological cycle creates one finding; invalid timing, window,
   currency, amount variation and initial amount create none.
 
-P08 graph/DFS remains a teammate-owned placeholder in this checkout. P09 takes
-immutable cycle candidates through a narrow boundary so the P08 implementation
-can merge without collision. Database persistence remains behind the P02
-repository adapter. No migration was added. Commit hash: pending team commit.
+P09 consumes the P08 immutable cycle-candidate boundary directly. Database
+persistence remains behind the P02 repository adapter. No migration was added.
+Commit hash: pending team commit.
 
 ## P10 — Transaction splitting partitioning and sliding windows
 
@@ -70,10 +316,8 @@ orchestration.
 
 ### Integration handoff
 
-The current checkout still contains placeholders for the P00–P09 schema and
-canonical transaction files. P10 therefore exposes a small immutable
-`TransferEvent` engine-boundary view and does not modify earlier-phase files.
-During integration, map the P04 canonical transaction contract to these fields:
+P10 exposes a small immutable `TransferEvent` engine-boundary view. During
+production persistence integration, map the P04 canonical transaction to:
 canonical transaction ID, sender, receiver, integer amount, ISO currency, UTC
 timestamp, type, status, and explicit reversal/category flags.
 
@@ -420,5 +664,65 @@ Production session storage, DB role restrictions, and atomic state-change plus
 activity insertion must use the P02 Supabase transaction adapter when merged.
 The hash chain is integrity evidence, not a claim of full tamper-proofness.
 
-Phase 19 frontend work was not started and remains blocked on the user-provided
-UI. Commit hash: pending team commit.
+Commit hash: pending team commit.
+
+## P19 — Frontend application and audit operations UI
+
+Status: Live API-integrated application implemented and locally verified on
+30 October 2026; private Sites publication was not requested.
+
+### Prepared
+
+- Complete route, screen, input, output, role, validation, and error-state map.
+- API integration, idempotency, authentication, money/time, and pagination
+  rules.
+- Accessibility, responsive behaviour, security, testing, and design-delivery
+  requirements.
+- Explicit backend-readiness dependencies preventing unsupported UI behaviour.
+- Responsive light audit dashboard matching the supplied neutral/lime reference.
+- Dashboard, ingestion, transactions, findings, cases, rules, and activity
+  routes with shared navigation and accessible responsive states.
+- Typed API integration for login, metrics, ingestion, transactions, duplicate
+  evidence, reconciliation, circular/splitting detectors, combined findings,
+  case creation/claim, rules, workflow validation and activity history.
+- Fifteen responsive application routes with loading, empty and error states.
+- Next.js static production export; strict TypeScript check and build passed.
+
+The authoritative contract remains `docs/phase19-frontend-requirements.md`.
+The browser is connected to the composed API through `NEXT_PUBLIC_API_BASE_URL`.
+
+## P20 — Stress, adversarial tests, performance and deployment
+
+Status: Partially implemented and locally verified on 30 October 2026; final
+release is blocked by production persistence and deployment verification.
+
+### Delivered
+
+- Repeatable eight-algorithm time/peak-memory benchmark runner and JSON report.
+- Frozen circular/splitting expected evidence and fixture validator.
+- Adversarial simultaneous re-import test preserving source identities.
+- Repository-wide backend/frontend verification and secret-shape scan.
+- Read-only Supabase version, connection-limit and migration verification.
+- Repeatable 8–12 minute demo playbook and explicit release test report.
+- Make targets for frontend, fixtures, benchmarks and release checks.
+
+### Acceptance evidence
+
+- Backend suite — 221 passed with one dependency deprecation warning.
+- Ruff passed; strict mypy passed across 99 app/script source files.
+- Frontend TypeScript and production export passed for fifteen app routes.
+- Supabase PostgreSQL 17.11, 60 connections and `0002_ingestion (head)`.
+- Eight custom-algorithm workloads are covered, including reconciliation.
+- `.env` is ignored and no credential-shaped values were found in source.
+
+### Blocking release gaps
+
+- Production Supabase adapters are incomplete.
+- The main API route surface is composed, but detector/reconciliation loaders
+  still need durable canonical snapshots.
+- Docker runtime, Supabase backup/PITR, Python 3.12 container verification and
+  deployment remain unverified.
+- Private Sites publishing remains paused pending explicit source approval.
+
+See `docs/test-report.md` for the acceptance decision. P20 remains partial until
+the production connections and deployment checks are closed.

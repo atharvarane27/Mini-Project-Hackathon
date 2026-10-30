@@ -1,0 +1,81 @@
+{
+  "measured_at_utc": "2026-10-30T02:17:49.262162+00:00",
+  "measurement": "median wall time; maximum tracemalloc peak across repeats",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "profile": "standard",
+  "python": "3.13.9",
+  "repeats": 3,
+  "results": [
+    {
+      "assumption": "O(N*K) build; 100 bounded candidate lookups",
+      "input_size": 2000,
+      "median_ms": 125.233,
+      "minimum_ms": 121.88,
+      "name": "inverted_index",
+      "operations": 2100,
+      "peak_kib": 1682.3,
+      "result_size": 10000
+    },
+    {
+      "assumption": "O(A*B) worst-case with bound-based exits",
+      "input_size": 2000,
+      "median_ms": 945.078,
+      "minimum_ms": 903.994,
+      "name": "bounded_edit_distance",
+      "operations": 2000,
+      "peak_kib": 6.2,
+      "result_size": 4000
+    },
+    {
+      "assumption": "Sparse chain, max_hops=6; worst case is exponential in hop bound",
+      "input_size": 2000,
+      "median_ms": 331.423,
+      "minimum_ms": 274.819,
+      "name": "bounded_cycle_search",
+      "operations": 2000,
+      "peak_kib": 306.2,
+      "result_size": 11985
+    },
+    {
+      "assumption": "Three ordered events per independent partition",
+      "input_size": 3000,
+      "median_ms": 60.211,
+      "minimum_ms": 60.17,
+      "name": "sliding_windows",
+      "operations": 3000,
+      "peak_kib": 656.0,
+      "result_size": 1000
+    },
+    {
+      "assumption": "Fixed typed rule parsed repeatedly",
+      "input_size": 1000,
+      "median_ms": 826.86,
+      "minimum_ms": 771.776,
+      "name": "lexer_parser",
+      "operations": 1000,
+      "peak_kib": 22.8,
+      "result_size": 1000
+    },
+    {
+      "assumption": "N pushes plus N pops, each O(log N)",
+      "input_size": 2000,
+      "median_ms": 21.655,
+      "minimum_ms": 20.787,
+      "name": "binary_heap",
+      "operations": 4000,
+      "peak_kib": 119.2,
+      "result_size": 2000
+    },
+    {
+      "assumption": "Single-chain DAG; O(V+E)",
+      "input_size": 2000,
+      "median_ms": 43.903,
+      "minimum_ms": 32.842,
+      "name": "topological_sort",
+      "operations": 3999,
+      "peak_kib": 1094.6,
+      "result_size": 2000
+    }
+  ],
+  "schema_version": 1
+}
