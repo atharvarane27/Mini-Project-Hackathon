@@ -10,6 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.ingestion import router as ingestion_router
+from app.api.v1.transactions import router as transactions_router
 from app.config import get_settings
 from app.core.errors import (
     AppException,
@@ -114,6 +115,7 @@ async def request_id_and_logging_middleware(
 
 # Register API Routers
 app.include_router(ingestion_router, prefix=settings.API_V1_PREFIX)
+app.include_router(transactions_router, prefix=settings.API_V1_PREFIX)
 
 
 @app.get(

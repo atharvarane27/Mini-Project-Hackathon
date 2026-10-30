@@ -228,20 +228,37 @@ class IngestionService:
                     b_errors.append(err.to_dict())
                 continue
 
-            # Ensure sender and receiver account records exist
-            self.canonicalizer.ensure_accounts_exist(
-                db,
-                result.sender_account_id,
-                result.receiver_account_id,
-                result.currency,
-                result.branch_id,
+            # Canonicalize row with duplicate reference collapsing and double-entry journals
+            canon_res = self.canonicalizer.canonicalize_row(
+                db, result, job_id, source_system_id
             )
+            src_rec = canon_res.source_record
+            txn = canon_res.transaction
+            junction = canon_res.junction
 
-            # Build SourceRecord, CanonicalTransaction, and junction
-            src_rec, txn, junction = self.canonicalizer.build_records(
-                result, job_id, source_system_id
-            )
-            db.add_all([src_rec, txn, junction])
+            if canon_res.is_ambiguous:
+                # Ambiguous duplicate: conflicting facts for same external reference
+                db.add_all([src_rec, junction])
+                b_rejected += 1
+                b_conflict += 1
+                err = QuarantinedRowError(
+                    row_number=result.row_number,
+                    external_ref=result.external_ref,
+                    error_code="AMBIGUOUS_DUPLICATE_REFERENCE",
+                    error_message=(
+                        f"Row with external_ref '{result.external_ref}' conflicts with existing "
+                        f"canonical transaction '{txn.id}'."
+                    ),
+                    raw_data=result.raw_payload,
+                )
+                b_errors.append(err.to_dict())
+                continue
+
+            if canon_res.is_new:
+                db.add_all([src_rec, txn, junction])
+            else:
+                # Repeated transport copy / duplicate reference -> collapsed to existing canonical transaction!
+                db.add_all([src_rec, junction])
 
             # Durable Outbox Event
             outbox_payload = {

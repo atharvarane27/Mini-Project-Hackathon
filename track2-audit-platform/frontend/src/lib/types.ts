@@ -109,6 +109,23 @@ export interface SourceRecordTransactionLink {
   readonly link_type: string;
 }
 
+export interface AccountingErrorDetail {
+  readonly error_code: string;
+  readonly message: string;
+  readonly imbalance_minor: number;
+  readonly journal_id: string | null;
+  readonly total_debit_minor: number | null;
+  readonly total_credit_minor: number | null;
+}
+
+export interface TransactionResponseItem extends CanonicalTransaction {
+  readonly source_record_count: number;
+  readonly source_record_ids: readonly string[];
+  readonly journal_ref: string | null;
+  readonly journal_status: string | null;
+  readonly accounting_integrity_error: AccountingErrorDetail | null;
+}
+
 // Detector Findings Taxonomy
 export type FindingType =
   | "DUPLICATE_CANDIDATE"

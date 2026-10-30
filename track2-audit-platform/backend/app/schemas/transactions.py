@@ -149,3 +149,39 @@ class SourceRecordTransactionLink(BaseModel):
     source_record_id: str
     transaction_id: str
     link_type: str = "CANONICAL"
+
+
+class AccountingErrorDetail(BaseModel):
+    """Details of an accounting or double-entry integrity error."""
+
+    model_config = ConfigDict(frozen=True)
+
+    error_code: str
+    message: str
+    imbalance_minor: MoneyMinor = 0
+    journal_id: str | None = None
+    total_debit_minor: MoneyMinor | None = None
+    total_credit_minor: MoneyMinor | None = None
+
+
+class TransactionResponseItem(BaseModel):
+    """Enriched transaction item with provenance and accounting integrity details."""
+
+    model_config = ConfigDict(frozen=True)
+
+    id: str
+    external_canonical_ref: str | None = None
+    sender_account_id: str
+    receiver_account_id: str
+    amount_minor: MoneyMinor
+    currency: CurrencyCode
+    occurred_at: UtcDatetime
+    posted_at: UtcDatetime
+    txn_type: str
+    status: TransactionStatus = TransactionStatus.POSTED
+    source_record_count: int = 1
+    source_record_ids: tuple[str, ...] = Field(default_factory=tuple)
+    journal_ref: str | None = None
+    journal_status: str | None = None
+    accounting_integrity_error: AccountingErrorDetail | None = None
+

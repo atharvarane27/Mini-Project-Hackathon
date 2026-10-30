@@ -259,3 +259,26 @@
 - **Mypy typechecker**: Success (0 issues across 97 source files)
 - **Frontend linter, typecheck & Vitest**: All checks passed (7/7 tests passed, 0 errors)
 
+
+
+## Phase P04: Canonical Financial Events and Double-Entry Journal Integrity
+
+- **Status**: Completed
+- **Date**: 2026-10-30
+- **Implemented Scope**:
+  1. `backend/app/ingestion/canonicalizer.py` implements deterministic canonicalization with provenance preservation, accepted duplicate collapse, ambiguous duplicate retention for review, and reversible correction/reversal tracking.
+  2. `backend/app/db/models/journals.py` preserves the exact double-entry invariant: each journal line is a single-sided debit or credit and groups are validated as balanced or flagged as `UNBALANCED` without deleting original postings.
+  3. `backend/app/ingestion/canonicalizer.py` maintains a deduplicated downstream snapshot of unique accepted canonical transfers so replays/retries do not add extra transfers to downstream detectors.
+  4. `backend/app/api/v1/transactions.py` provides `GET /api/v1/transactions` with cursor pa
+
+
+## Phase P04: Canonical Financial Events and Double-Entry Journal Integrityhot endpoint exposes only unique accepted canonical transfers.
+  5. `backend/tests/integration/test_canonicalization.py` covers repeated-copy collapse, ambiguous duplicates, reversible corrections, journal integrity, snapshot uniqueness, and the transaction API behavior.
+
+### Test Results
+- `backend/.venv/bin/pytest backend/tests/integration/test_canonicalization.py -q`
+- Result: **11/11 passed** (exit code 0)
+
+### Verification Notes
+- The P04 canonicalization and accounting-integrity suite passes under the project virtual environment.
+- A Starlette deprecation warning from `httpx` remains, but it does not affect correctness or test success.
