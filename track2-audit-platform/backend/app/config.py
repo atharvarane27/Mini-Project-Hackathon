@@ -17,35 +17,15 @@ class Settings(BaseSettings):
     )
 
     APP_NAME: str = "AuditForge"
-    APP_VERSION: s.env
-.env.*
-!.env.example
-__pycache__/
-*.py[cod]
-.venv/
-venv/
-.pytest_cache/
-.mypy_cache/
-.ruff_cant.en  !.envG:__pycache__/e
-*.py[cod]
-.EL.venv/
-v"Ivenv/  .pytI_.mypy_cache/
-r .ruff_i/v1"
-
-.coverage
-hashtmlcov/gsnode_mo_B.next/
-out/
-raout/
-padise"builos*.egg"]playwrightsetest-resTABASE_URL:*.log
-.DS_St  .  "poThumbs.d+p*.tsbuil/p
-# Large locgre*.zip
-SFinDSet.zip
-SFinDSet.csv
-SFinDSet.cs"
-SFin)
-SFinDSet.csE_SFinDSet.csinEOF
-
-cat > backend/app_OcaRFLOW: int = 5
+    APP_VERSION: str = "0.1.0"
+    ENVIRONMENT: Literal["development", "test", "staging", "production"] = "development"
+    DEBUG: bool = True
+    LOG_LEVEL: str = "INFO"
+    API_V1_PREFIX: str = "/api/v1"
+    DB_BACKEND: Literal["sqlite", "postgres", "supabase"] = "supabase"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/auditforge"
+    DATABASE_POOL_SIZE: int = 5
+    DATABASE_MAX_OVERFLOW: int = 10
     DATABASE_POOL_TIMEOUT: int = 30
     DATABASE_POOL_RECYCLE: int = 1800
 

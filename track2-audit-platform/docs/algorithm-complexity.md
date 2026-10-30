@@ -4,13 +4,20 @@
 
 The application-owned inverted index and exact blocking logic avoid an all-pairs comparison in the lookup path. For a query record with token set T and posting-list sizes |P(t)|, candidate retrieval is bounded by:
 
-- O(sum_{t in T} |P(t)|)
+- O(sum_{t in T} min(|P(t)|, bucket_cap))
 
 This is far below the naive all-pairs cost:
 
 - O(N^2) when every record must be compared against every other record
 
 In balanced fixtures, candidate counts remain close to the selective window created by token overlap, not the full population size. The P05 index therefore keeps the comparison workload dominated by the blocking fan-out rather than by full corpus scanning.
+
+Important caveat: the implementation is intentionally bounded, not universally optimal. In the worst case of a highly common token (for example, a shared account ID, common "transfer" text, or overpopulated amount bucket), the posting list can still be large. The practical upper bound is therefore best described as:
+
+- O(sum_{t in T} min(|P(t)|, bucket_cap)) with an additional bounded query cap,
+- not an unconditional O(N log N) guarantee for all possible inputs.
+
+A hot token may still produce a large candidate set, but it is capped by the bucket cap and query cap so the algorithm remains usable and auditable under skew instead of degenerating into an unbounded full corpus fan-out.
 
 ## Edit-distance classification
 
@@ -22,7 +29,7 @@ where L is the average string length of the compared text field. This is still s
 
 ## Worst-case skew and bounded fallback
 
-Skew remains possible when a very common token or amount bucket dominates a partition. In that degenerate case, the candidate set can still grow toward O(N), but it does not require an all-pairs scan and remains bounded by the obstructing bucket fan-out. The algorithm is therefore deterministic and auditable, while admitting that adversarial skew can increase the candidate set.
+Skew remains possible when a very common token or amount bucket dominates a partition. In that degenerate case, the candidate set can still grow toward O(N), but it does not require an all-pairs scan and remains bounded by the obstructing bucket fan-out and the configured caps. The algorithm is therefore deterministic and auditable, while admitting that adversarial skew can increase the candidate set.
 
 ## Evidence and auditability
 

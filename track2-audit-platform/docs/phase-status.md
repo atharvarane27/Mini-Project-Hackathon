@@ -3,7 +3,9 @@
 ## Phase P00: Repository and Development Environment
 - Status: Completed
 - Scope: project scaffold, Python/FastAPI backend, Next.js frontend, container orchestration, CI, and environment configuration.
-- Key files: `backend/pyproject.toml`, `backend/app/conf- Key files: `backend/pyproject.toml`, `backend/app/conf- Key files: `backend/pyproject.toml`, `backend/app/conf- Key files: `backend/pyproject.toml`, `backend/app/conf- Key files: `backend/pyproject.toml`, `backend/app/conf- Key files: `backend/pyproject.toml`, `backend/app/conf- Key files: `backend/pyproject.toml`, `backend/app/conf- Key files: `backend/pyproject.toml`, `backend/app/conf- Key files: `backend/pyproject.toml`, `backend/app/conf- Key files: `backend/pyproject.toml`, `backend/app/conf- Key files: `backend/pyproject.toml`, `backend/app/conf- Key files: `backend/pyproject.toml`, `backend/app/conf- Key files: `backend/pyproject.toml`, `backend/app/conf- Key files: `backend/pyproject.tomlimitations: contract enforcement is strict; behavioral logic is implemented in later phases.
+- Key files: `backend/pyproject.toml`, `backend/app/config.py`, `backend/app/main.py`, `docker-compose.yml`, and the frontend app scaffold.
+- Tests run: environment bootstrapping, backend smoke checks, and frontend app startup validation.
+- Known limitations: contract enforcement is strict; behavioral logic is implemented in later phases.
 
 ## Phase P02: Database Schema, Migrations, and Integrity
 - Status: Completed
@@ -21,9 +23,9 @@
 
 ## Phase P04: Canonical Financial Events and Double-Entry Journal Integrity
 - Status: Completed
-- Scope: canonical transfer generation, deduplicated accepted-transfer snapshots, and journal balance validation without mutating original postings.
+- Scope: canonical transfer generation, deduplicated accepted-transfer snapshots, journal balance validation, and provenance-safe duplicate/ambiguity handling.
 - Key files: `backend/app/ingestion/canonicalizer.py`, `backend/app/db/models/journals.py`, `backend/app/api/v1/transactions.py`, `backend/tests/integration/test_canonicalization.py`.
-- Tests run: `backend/.venv/bin/pytest backend/tests/integration/test_canonicalization.py -q` (11/11 passed).
+- Tests run: `pytest backend/tests/integration/test_canonicalization.py -q` and the focused P04 validation suite.
 - Known limitations: P04 is deterministic and auditable but intentionally scoped to canonicalization and accounting integrity; downstream matching is handled in P07.
 
 ## Phase P05: Identity Engine and Inverted-Index Blocking
@@ -51,7 +53,7 @@
 - Status: Completed
 - Scope: directed multigraph modeling, temporal validation, and DFS-based cycle detection for circular transfer patterns.
 - Key files: `backend/app/engines/circular/graph.py`, `backend/app/engines/circular/dfs.py`, `backend/app/engines/circular/service.py`, `backend/app/engines/circular/temporal_validator.py`, `backend/tests/unit/test_circular.py`.
-- Tests run: `backend/.venv/bin/python -m pytest tests/unit/test_circular.py -q` (8/8 passed) and the combined identity/reconciliation/circular validation pass.
+- Tests run: `pytest tests/unit/test_circular.py -q` and the combined identity/reconciliation/circular validation pass.
 - Known limitations: cycle detection is intentionally bounded by hops and temporal windows to prevent unbounded traversal.
 
 ## Validation Summary

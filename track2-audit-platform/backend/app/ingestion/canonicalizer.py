@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.models import (
@@ -31,8 +33,8 @@ class CanonicalizationResult:
     """Result of canonicalizing a single normalized row."""
 
     source_record: SourceRecord
-    transaction: Transaction
-    junction: SourceRecordTransaction
+    transaction: Transaction | None
+    junction: SourceRecordTransaction | None
     journal: Journal | None = None
     is_new: bool = True
     is_duplicate: bool = False
@@ -56,6 +58,12 @@ class Canonicalizer:
     def __init__(self, default_branch_id: str = "br-mum-01") -> None:
         self.default_branch_id = default_branch_id
 
+    def _normalize_account_ref(self, account_id: str | None) -> str | None:
+        if account_id is None:
+            return None
+        value = str(account_id).strip()
+        return value or None
+
     def ensure_accounts_exist(
         self,
         db_session: Any,
@@ -65,6 +73,11 @@ class Canonicalizer:
         branch_id: str | None = None,
     ) -> None:
         """Ensure accounts and branches exist before inserting transactions for RESTRICT FKs."""
+        sender_ref = self._normalize_account_ref(sender_id)
+        receiver_ref = self._normalize_account_ref(receiver_id)
+        if sender_ref is None or receiver_ref is None:
+            return
+
         target_branch = branch_id or self.default_branch_id
 
         # Verify or create branch if needed
@@ -78,25 +91,24 @@ class Canonicalizer:
             db_session.add(branch)
             db_session.flush()
 
-        # Sender account
-        sender_acc = db_session.query(Account).filter_by(id=sender_id).first()
+        sender_acc = db_session.query(Account).filter_by(id=sender_ref).first()
         if not sender_acc:
             sender_acc = Account(
-                id=sender_id,
+                id=sender_ref,
                 branch_id=branch.id,
                 currency=currency,
-                masked_label=f"ACC-{sender_id[-8:] if len(sender_id) >= 8 else sender_id}",
+                masked_label=f"ACC-{sender_ref[-8:] if len(sender_ref) >= 8 else sender_ref}",
             )
             db_session.add(sender_acc)
 
-        # Receiver account
-        receiver_acc = db_session.query(Account).filter_by(id=receiver_id).first()
+        receiver_acc = db_session.query(Account).filter_by(id=receiver_ref).first()
         if not receiver_acc:
+            receiver_currency = sender_acc.currency if sender_acc and sender_acc.currency else currency
             receiver_acc = Account(
-                id=receiver_id,
+                id=receiver_ref,
                 branch_id=branch.id,
-                currency=currency,
-                masked_label=f"ACC-{receiver_id[-8:] if len(receiver_id) >= 8 else receiver_id}",
+                currency=receiver_currency,
+                masked_label=f"ACC-{receiver_ref[-8:] if len(receiver_ref) >= 8 else receiver_ref}",
             )
             db_session.add(receiver_acc)
 
@@ -130,15 +142,65 @@ class Canonicalizer:
             db_session.add(job)
             db_session.flush()
 
+    @staticmethod
+    def _normalize_timestamp_for_match(value: datetime) -> datetime:
+        """Normalize to UTC and second precision for duplicate identity checks."""
+        dt = value.astimezone(UTC) if value.tzinfo is not None else value.replace(tzinfo=UTC)
+        return dt.replace(microsecond=0)
+
+    def _row_matches_existing_transaction(
+        self,
+        row: NormalizedRow,
+        existing_txn: Transaction,
+    ) -> bool:
+        return (
+            row.amount_minor == existing_txn.amount_minor
+            and row.currency == existing_txn.currency
+            and row.sender_account_id == existing_txn.sender_account_id
+            and row.receiver_account_id == existing_txn.receiver_account_id
+            and self._normalize_timestamp_for_match(row.occurred_at)
+            == self._normalize_timestamp_for_match(existing_txn.occurred_at)
+            and row.txn_type == existing_txn.txn_type
+        )
+
     def canonicalize_row(
         self,
         db_session: Session,
         row: NormalizedRow,
         job_id: str,
         source_system_id: str,
+        *,
+        allow_revision_update: bool = False,
     ) -> CanonicalizationResult:
-        """Deterministically canonicalize a row with duplicate collapse and ambiguity handling."""
+        """Deterministically canonicalize a row with duplicate collapse and ambiguity handling.
+
+        `allow_revision_update` is a service-level override used only when a newer
+        source revision is intentionally superseding an older, lower revision for the
+        same external reference.
+        """
         canon_ref = f"CANON-{source_system_id}-{row.external_ref}"
+
+        if not self._normalize_account_ref(row.sender_account_id) or not self._normalize_account_ref(row.receiver_account_id):
+            src_rec = SourceRecord(
+                id=f"src-{uuid.uuid4().hex[:16]}",
+                ingestion_job_id=job_id,
+                source_system_id=source_system_id,
+                external_ref=row.external_ref,
+                source_revision=row.source_revision,
+                payload_json=row.raw_payload,
+                payload_hash=row.payload_hash,
+                received_at=row.occurred_at,
+                record_status="QUARANTINED",
+            )
+            return CanonicalizationResult(
+                source_record=src_rec,
+                transaction=None,
+                junction=None,
+                journal=None,
+                is_new=False,
+                is_duplicate=False,
+                is_ambiguous=False,
+            )
 
         # Ensure provenance entities exist
         self.ensure_provenance_entities_exist(db_session, source_system_id, job_id)
@@ -162,15 +224,49 @@ class Canonicalizer:
         src_rec_id = f"src-{uuid.uuid4().hex[:16]}"
 
         if existing_txn is not None:
-            # Check financial match to distinguish accepted duplicate vs ambiguous conflict
-            is_financial_match = (
-                row.amount_minor == existing_txn.amount_minor
-                and row.currency == existing_txn.currency
-                and row.sender_account_id == existing_txn.sender_account_id
-                and row.receiver_account_id == existing_txn.receiver_account_id
+            same_ref_records = (
+                db_session.query(SourceRecord)
+                .filter_by(source_system_id=source_system_id, external_ref=row.external_ref)
+                .all()
             )
+            latest_revision = max((src.source_revision for src in same_ref_records), default=row.source_revision)
+            if allow_revision_update and row.source_revision > latest_revision:
+                src_rec = SourceRecord(
+                    id=src_rec_id,
+                    ingestion_job_id=job_id,
+                    source_system_id=source_system_id,
+                    external_ref=row.external_ref,
+                    source_revision=row.source_revision,
+                    payload_json=row.raw_payload,
+                    payload_hash=row.payload_hash,
+                    received_at=row.occurred_at,
+                    record_status="ACCEPTED",
+                )
+                existing_junc = (
+                    db_session.query(SourceRecordTransaction)
+                    .filter_by(
+                        source_record_id=src_rec.id,
+                        transaction_id=existing_txn.id,
+                    )
+                    .first()
+                )
+                junction = existing_junc or SourceRecordTransaction(
+                    source_record_id=src_rec.id,
+                    transaction_id=existing_txn.id,
+                    link_type="REVISION_UPDATE",
+                )
+                return CanonicalizationResult(
+                    source_record=src_rec,
+                    transaction=existing_txn,
+                    junction=junction,
+                    journal=None,
+                    is_new=False,
+                    is_duplicate=False,
+                    is_ambiguous=False,
+                )
 
-            # Check if source record already exists for this revision
+            is_financial_match = self._row_matches_existing_transaction(row, existing_txn)
+
             existing_src = (
                 db_session.query(SourceRecord)
                 .filter_by(
@@ -182,7 +278,6 @@ class Canonicalizer:
             )
 
             if is_financial_match:
-                # Accepted duplicate reference: collapse to existing canonical event
                 if existing_src is not None:
                     src_rec = existing_src
                 else:
@@ -219,45 +314,44 @@ class Canonicalizer:
                     is_duplicate=True,
                     is_ambiguous=False,
                 )
+
+            if existing_src is not None:
+                src_rec = existing_src
+                src_rec.record_status = "AMBIGUOUS"
             else:
-                # Ambiguous duplicate: conflicting facts for same external reference
-                if existing_src is not None:
-                    src_rec = existing_src
-                    src_rec.record_status = "AMBIGUOUS"
-                else:
-                    src_rec = SourceRecord(
-                        id=src_rec_id,
-                        ingestion_job_id=job_id,
-                        source_system_id=source_system_id,
-                        external_ref=row.external_ref,
-                        source_revision=row.source_revision,
-                        payload_json=row.raw_payload,
-                        payload_hash=row.payload_hash,
-                        received_at=row.occurred_at,
-                        record_status="AMBIGUOUS",
-                    )
-                existing_junc = (
-                    db_session.query(SourceRecordTransaction)
-                    .filter_by(
-                        source_record_id=src_rec.id,
-                        transaction_id=existing_txn.id,
-                    )
-                    .first()
+                src_rec = SourceRecord(
+                    id=src_rec_id,
+                    ingestion_job_id=job_id,
+                    source_system_id=source_system_id,
+                    external_ref=row.external_ref,
+                    source_revision=row.source_revision,
+                    payload_json=row.raw_payload,
+                    payload_hash=row.payload_hash,
+                    received_at=row.occurred_at,
+                    record_status="AMBIGUOUS",
                 )
-                junction = existing_junc or SourceRecordTransaction(
+            existing_junc = (
+                db_session.query(SourceRecordTransaction)
+                .filter_by(
                     source_record_id=src_rec.id,
                     transaction_id=existing_txn.id,
-                    link_type="AMBIGUOUS_DUPLICATE",
                 )
-                return CanonicalizationResult(
-                    source_record=src_rec,
-                    transaction=existing_txn,
-                    junction=junction,
-                    journal=None,
-                    is_new=False,
-                    is_duplicate=False,
-                    is_ambiguous=True,
-                )
+                .first()
+            )
+            junction = existing_junc or SourceRecordTransaction(
+                source_record_id=src_rec.id,
+                transaction_id=existing_txn.id,
+                link_type="AMBIGUOUS_DUPLICATE",
+            )
+            return CanonicalizationResult(
+                source_record=src_rec,
+                transaction=existing_txn,
+                junction=junction,
+                journal=None,
+                is_new=False,
+                is_duplicate=False,
+                is_ambiguous=True,
+            )
 
         # New canonical event
         txn_id = f"txn-{uuid.uuid4().hex[:16]}"
@@ -290,9 +384,31 @@ class Canonicalizer:
             link_type="CANONICAL",
         )
 
-        # Double-entry paired journal lines
         target_branch = row.branch_id or self.default_branch_id
         jrn_ref = f"JRN-{source_system_id}-{row.external_ref}"
+        try:
+            with db_session.begin_nested():
+                db_session.add(canonical_txn)
+                db_session.flush()
+        except IntegrityError:
+            db_session.rollback()
+            existing_txn = (
+                db_session.query(Transaction)
+                .filter_by(external_canonical_ref=canon_ref)
+                .first()
+            )
+            if existing_txn is None:
+                raise
+            return self._collapse_or_ambiguous_duplicate(
+                db_session,
+                row=row,
+                job_id=job_id,
+                source_system_id=source_system_id,
+                existing_txn=existing_txn,
+                src_rec=src_rec,
+                src_rec_id=src_rec_id,
+            )
+
         journal, _, _ = self.store_journal_lines(
             db_session=db_session,
             branch_id=target_branch,
@@ -302,6 +418,7 @@ class Canonicalizer:
                 (row.receiver_account_id, 0, row.amount_minor),
             ],
             posted_at=row.posted_at,
+            account_currency_map={row.sender_account_id: row.currency, row.receiver_account_id: row.currency},
         )
 
         return CanonicalizationResult(
@@ -314,13 +431,93 @@ class Canonicalizer:
             is_ambiguous=False,
         )
 
+    def _collapse_or_ambiguous_duplicate(
+        self,
+        db_session: Session,
+        *,
+        row: NormalizedRow,
+        job_id: str,
+        source_system_id: str,
+        existing_txn: Transaction,
+        src_rec: SourceRecord,
+        src_rec_id: str,
+    ) -> CanonicalizationResult:
+        is_financial_match = self._row_matches_existing_transaction(row, existing_txn)
+        if is_financial_match:
+            existing_src = (
+                db_session.query(SourceRecord)
+                .filter_by(
+                    source_system_id=source_system_id,
+                    external_ref=row.external_ref,
+                    source_revision=row.source_revision,
+                )
+                .first()
+            )
+            src_rec = existing_src or src_rec
+            existing_junc = (
+                db_session.query(SourceRecordTransaction)
+                .filter_by(
+                    source_record_id=src_rec.id,
+                    transaction_id=existing_txn.id,
+                )
+                .first()
+            )
+            junction = existing_junc or SourceRecordTransaction(
+                source_record_id=src_rec.id,
+                transaction_id=existing_txn.id,
+                link_type="DUPLICATE_COLLAPSED",
+            )
+            return CanonicalizationResult(
+                source_record=src_rec,
+                transaction=existing_txn,
+                junction=junction,
+                journal=None,
+                is_new=False,
+                is_duplicate=True,
+                is_ambiguous=False,
+            )
+
+        existing_src = (
+            db_session.query(SourceRecord)
+            .filter_by(
+                source_system_id=source_system_id,
+                external_ref=row.external_ref,
+                source_revision=row.source_revision,
+            )
+            .first()
+        )
+        src_rec = existing_src or src_rec
+        src_rec.record_status = "AMBIGUOUS"
+        existing_junc = (
+            db_session.query(SourceRecordTransaction)
+            .filter_by(
+                source_record_id=src_rec.id,
+                transaction_id=existing_txn.id,
+            )
+            .first()
+        )
+        junction = existing_junc or SourceRecordTransaction(
+            source_record_id=src_rec.id,
+            transaction_id=existing_txn.id,
+            link_type="AMBIGUOUS_DUPLICATE",
+        )
+        return CanonicalizationResult(
+            source_record=src_rec,
+            transaction=existing_txn,
+            junction=junction,
+            journal=None,
+            is_new=False,
+            is_duplicate=False,
+            is_ambiguous=True,
+        )
+
     def build_records(
         self,
         row: NormalizedRow,
         job_id: str,
         source_system_id: str,
         db_session: Session | None = None,
-    ) -> tuple[SourceRecord, Transaction, SourceRecordTransaction]:
+    ) -> tuple[SourceRecord, Transaction | None, SourceRecordTransaction | None]:
         """Build SourceRecord, Transaction, and junction link from NormalizedRow.
 
         Supports both standalone generation and session-aware duplicate collapsing.
@@ -372,6 +569,7 @@ class Canonicalizer:
         journal_ref: str,
         lines_data: list[tuple[str, int, int]],
         posted_at: datetime | None = None,
+        account_currency_map: dict[str, str] | None = None,
     ) -> tuple[Journal, bool, Finding | None]:
         """Store journal lines with paired debit/credit and exact money precision.
 
@@ -405,10 +603,11 @@ class Canonicalizer:
             # Ensure account exists
             acc = db_session.query(Account).filter_by(id=acc_id).first()
             if not acc:
+                account_currency = (account_currency_map or {}).get(acc_id, "INR")
                 acc = Account(
                     id=acc_id,
                     branch_id=branch_id,
-                    currency="INR",
+                    currency=account_currency,
                     masked_label=f"ACC-{acc_id[-8:] if len(acc_id) >= 8 else acc_id}",
                 )
                 db_session.add(acc)
@@ -533,11 +732,12 @@ class Canonicalizer:
         start_at: datetime | None = None,
         end_at: datetime | None = None,
         currency: str | None = None,
+        batch_size: int = 1000,
     ) -> list[CanonicalTransferEvent]:
-        """Expose a downstream snapshot of unique accepted canonical transfers.
+        """Return unique accepted canonical transfers using bounded keyset pages."""
+        if batch_size <= 0:
+            raise ValueError("batch_size must be positive")
 
-        Guarantees that repeated transport copies and retries never add extra transfers.
-        """
         stmt = (
             select(Transaction)
             .filter(Transaction.status == "POSTED")
@@ -551,24 +751,44 @@ class Canonicalizer:
         if currency is not None:
             stmt = stmt.filter(Transaction.currency == currency)
 
-        transactions = db_session.scalars(stmt).all()
-
         events: list[CanonicalTransferEvent] = []
-        for t in transactions:
-            occurred = t.occurred_at
-            if occurred.tzinfo is None:
-                occurred = occurred.replace(tzinfo=UTC)
+        last_occurred_at: datetime | None = None
+        last_id: str | None = None
 
-            events.append(
-                CanonicalTransferEvent(
-                    transaction_id=t.id,
-                    sender=t.sender_account_id,
-                    receiver=t.receiver_account_id,
-                    amount_minor=t.amount_minor,
-                    currency=t.currency,
-                    occurred_at=occurred,
-                    status=t.status,
-                    checkpoint=f"chk-{t.id}",
+        while True:
+            page_stmt = stmt
+            if last_occurred_at is not None and last_id is not None:
+                page_stmt = page_stmt.filter(
+                    or_(
+                        Transaction.occurred_at > last_occurred_at,
+                        (Transaction.occurred_at == last_occurred_at) & (Transaction.id > last_id),
+                    )
                 )
-            )
+            page_stmt = page_stmt.limit(batch_size)
+            page = db_session.scalars(page_stmt).all()
+            if not page:
+                break
+
+            for t in page:
+                occurred = t.occurred_at
+                if occurred.tzinfo is None:
+                    occurred = occurred.replace(tzinfo=UTC)
+                events.append(
+                    CanonicalTransferEvent(
+                        transaction_id=t.id,
+                        sender=t.sender_account_id,
+                        receiver=t.receiver_account_id,
+                        amount_minor=t.amount_minor,
+                        currency=t.currency,
+                        occurred_at=occurred,
+                        status=t.status,
+                        checkpoint=f"chk-{t.id}",
+                    )
+                )
+
+            last_occurred_at = page[-1].occurred_at
+            last_id = page[-1].id
+            if len(page) < batch_size:
+                break
+
         return events

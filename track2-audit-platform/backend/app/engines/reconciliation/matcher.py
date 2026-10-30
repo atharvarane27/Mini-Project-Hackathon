@@ -6,7 +6,7 @@ import hashlib
 import re
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Iterable
 
@@ -85,18 +85,42 @@ def _currency(record: dict[str, Any]) -> str | None:
     return str(value).upper()
 
 
+def _coerce_utc_datetime(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        try:
+            text = str(value).strip()
+            if text.endswith("Z"):
+                text = text[:-1] + "+00:00"
+            dt = datetime.fromisoformat(text)
+        except ValueError:
+            return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
+
+
 def _occurred_at(record: dict[str, Any]) -> datetime | None:
     for key in ("occurred_at", "posted_at", "created_at", "timestamp"):
         value = record.get(key)
-        if value is None:
-            continue
-        if not isinstance(value, datetime):
-            try:
-                return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-            except ValueError:
-                continue
-        return value
+        dt = _coerce_utc_datetime(value)
+        if dt is not None:
+            return dt
     return None
+
+
+def _record_in_window(record: dict[str, Any], *, start_at: datetime | None, cutoff_at: datetime | None) -> bool:
+    occurred_at = _occurred_at(record)
+    if occurred_at is None:
+        return True
+    if start_at is not None and occurred_at < start_at:
+        return False
+    if cutoff_at is not None and occurred_at > cutoff_at:
+        return True
+    return True
 
 
 def _same_source(left: dict[str, Any], right: dict[str, Any]) -> bool:
@@ -120,7 +144,9 @@ class ReconciliationMatcher:
 
     def __init__(self, *, similarity_threshold: float = 0.8) -> None:
         self.similarity_threshold = float(similarity_threshold)
-        self._resolver = DuplicateResolver(
+
+    def _new_resolver(self) -> DuplicateResolver:
+        return DuplicateResolver(
             index_fields=["external_ref", "reference", "amount_minor"],
             phonetic_field="external_ref",
             text_field="external_ref",
@@ -133,21 +159,32 @@ class ReconciliationMatcher:
         left_records: Iterable[dict[str, Any]],
         right_records: Iterable[dict[str, Any]],
         *,
+        start_at: datetime | str | None = None,
         cutoff_at: datetime | None = None,
         currency: str | None = None,
     ) -> list[ReconciliationMatch]:
+        start_dt = _coerce_utc_datetime(start_at) if isinstance(start_at, str | datetime) else start_at
+        cutoff_dt = _coerce_utc_datetime(cutoff_at) if isinstance(cutoff_at, str | datetime) else cutoff_at
+
+        resolver = self._new_resolver()
         left = [dict(item) for item in left_records]
         right = [dict(item) for item in right_records]
         right_by_ref: dict[str, list[dict[str, Any]]] = defaultdict(list)
         right_by_compound: dict[str, list[dict[str, Any]]] = defaultdict(list)
+
         for record in right:
+            occurred_at = _occurred_at(record)
+            if start_dt is not None and occurred_at is not None and occurred_at < start_dt:
+                continue
+            if cutoff_dt is not None and occurred_at is not None and occurred_at > cutoff_dt:
+                pass
             ref = _reference(record)
             if ref:
                 right_by_ref[_normalize_ref(ref)].append(record)
             compound = self._compound_key(record)
             if compound:
                 right_by_compound[compound].append(record)
-            self._resolver.add_record(_record_id(record), record)
+            resolver.add_record(_record_id(record), record)
 
         consumed_left: set[str] = set()
         consumed_right: set[str] = set()
@@ -158,7 +195,9 @@ class ReconciliationMatcher:
             if left_id in consumed_left:
                 continue
             left_occurred = _occurred_at(left_record)
-            if cutoff_at is not None and left_occurred is not None and left_occurred > cutoff_at:
+            if start_dt is not None and left_occurred is not None and left_occurred < start_dt:
+                continue
+            if cutoff_dt is not None and left_occurred is not None and left_occurred > cutoff_dt:
                 results.append(
                     ReconciliationMatch(
                         status=ReconciliationStatus.PENDING_LATE,
@@ -167,7 +206,7 @@ class ReconciliationMatcher:
                         variance_minor=0,
                         reason_code="AFTER_CUTOFF",
                         left_amount_minor=_amount_minor(left_record),
-                        evidence={"cutoff_at": cutoff_at.isoformat(), "occurred_at": left_occurred.isoformat()},
+                        evidence={"cutoff_at": cutoff_dt.isoformat(), "occurred_at": left_occurred.isoformat()},
                     )
                 )
                 consumed_left.add(left_id)
@@ -189,31 +228,40 @@ class ReconciliationMatcher:
                 consumed_left.add(left_id)
                 continue
 
-            if cutoff_at is not None:
-                late_candidates = [
+            if cutoff_dt is not None:
+                non_late = [
                     candidate for candidate in candidate_matches
-                    if _occurred_at(candidate) is not None and _occurred_at(candidate) > cutoff_at
-                ]
-                if late_candidates:
-                    late_dt = _occurred_at(late_candidates[0])
-                    results.append(
-                        ReconciliationMatch(
-                            status=ReconciliationStatus.PENDING_LATE,
-                            left_record_id=left_id,
-                            right_record_id=_record_id(late_candidates[0]),
-                            variance_minor=0,
-                            reason_code="AFTER_CUTOFF",
-                            left_amount_minor=_amount_minor(left_record),
-                            right_amount_minor=_amount_minor(late_candidates[0]),
-                            evidence={
-                                "cutoff_at": cutoff_at.isoformat(),
-                                "candidate_occurred_at": late_dt.isoformat() if late_dt else None,
-                            },
-                        )
+                    if _record_id(candidate) not in consumed_right
+                    and not (
+                        (_occurred_at(candidate) is not None) and (_occurred_at(candidate) > cutoff_dt)
                     )
-                    consumed_left.add(left_id)
-                    consumed_right.add(_record_id(late_candidates[0]))
-                    continue
+                ]
+                if non_late:
+                    candidate_matches = non_late
+                else:
+                    late_candidates = [
+                        candidate for candidate in candidate_matches
+                        if _record_id(candidate) not in consumed_right and _occurred_at(candidate) is not None and _occurred_at(candidate) > cutoff_dt
+                    ]
+                    if late_candidates:
+                        late_candidate = late_candidates[0]
+                        results.append(
+                            ReconciliationMatch(
+                                status=ReconciliationStatus.PENDING_LATE,
+                                left_record_id=left_id,
+                                right_record_id=_record_id(late_candidate),
+                                variance_minor=0,
+                                reason_code="AFTER_CUTOFF",
+                                left_amount_minor=_amount_minor(left_record),
+                                right_amount_minor=_amount_minor(late_candidate),
+                                evidence={
+                                    "cutoff_at": cutoff_dt.isoformat(),
+                                    "candidate_occurred_at": _occurred_at(late_candidate).isoformat(),
+                                },
+                            )
+                        )
+                        consumed_left.add(left_id)
+                        continue
 
             best: tuple[float, dict[str, Any]] | None = None
             for candidate in candidate_matches:
@@ -242,20 +290,29 @@ class ReconciliationMatcher:
             match_record = best[1]
             right_id = _record_id(match_record)
             if self._is_ambiguous(left_record, match_record, candidate_matches, consumed_right):
+                ambiguous_ids = sorted(
+                    {
+                        _record_id(item)
+                        for item in candidate_matches
+                        if _record_id(item) not in consumed_right
+                    }
+                )
                 results.append(
                     ReconciliationMatch(
                         status=ReconciliationStatus.AMBIGUOUS,
                         left_record_id=left_id,
-                        right_record_id=right_id,
+                        right_record_id=None,
                         variance_minor=0,
                         reason_code="MULTIPLE_CANDIDATES",
                         left_amount_minor=_amount_minor(left_record),
                         right_amount_minor=_amount_minor(match_record),
-                        evidence={"candidate_ids": [ _record_id(item) for item in candidate_matches ], "algorithm": self.ALGORITHM_VERSION},
+                        evidence={
+                            "candidate_ids": ambiguous_ids,
+                            "algorithm": self.ALGORITHM_VERSION,
+                        },
                     )
                 )
                 consumed_left.add(left_id)
-                consumed_right.add(right_id)
                 continue
 
             status = self._evaluate_pair(left_record, match_record, currency=currency)
@@ -285,7 +342,9 @@ class ReconciliationMatcher:
             if right_id in consumed_right:
                 continue
             right_occurred = _occurred_at(right_record)
-            if cutoff_at is not None and right_occurred is not None and right_occurred > cutoff_at:
+            if start_dt is not None and right_occurred is not None and right_occurred < start_dt:
+                continue
+            if cutoff_dt is not None and right_occurred is not None and right_occurred > cutoff_dt:
                 results.append(
                     ReconciliationMatch(
                         status=ReconciliationStatus.PENDING_LATE,
@@ -294,7 +353,7 @@ class ReconciliationMatcher:
                         variance_minor=0,
                         reason_code="AFTER_CUTOFF",
                         right_amount_minor=_amount_minor(right_record),
-                        evidence={"cutoff_at": cutoff_at.isoformat(), "occurred_at": right_occurred.isoformat()},
+                        evidence={"cutoff_at": cutoff_dt.isoformat(), "occurred_at": right_occurred.isoformat()},
                     )
                 )
                 consumed_right.add(right_id)
@@ -475,8 +534,10 @@ def compute_run_id(
     policy_version: str,
     input_checkpoint: str,
 ) -> str:
-    start_value = start_at.isoformat() if isinstance(start_at, datetime) else str(start_at)
-    cutoff_value = cutoff_at.isoformat() if isinstance(cutoff_at, datetime) else str(cutoff_at)
+    start_dt = _coerce_utc_datetime(start_at)
+    cutoff_dt = _coerce_utc_datetime(cutoff_at)
+    start_value = start_dt.isoformat() if start_dt is not None else str(start_at)
+    cutoff_value = cutoff_dt.isoformat() if cutoff_dt is not None else str(cutoff_at)
     raw = "|".join(
         [
             str(source_left_id),

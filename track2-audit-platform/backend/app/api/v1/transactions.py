@@ -134,11 +134,13 @@ def get_transactions_snapshot(
 ) -> ApiResponse[list[CanonicalTransferEvent]]:
     """Expose a downstream snapshot of unique accepted canonical transfers."""
     req_id = getattr(request.state, "request_id", f"req-{uuid.uuid4().hex[:12]}")
-    events = canonicalizer.get_downstream_snapshot(
-        db_session=db,
-        start_at=start_at,
-        end_at=end_at,
-        currency=currency,
+    events = list(
+        canonicalizer.get_downstream_snapshot(
+            db_session=db,
+            start_at=start_at,
+            end_at=end_at,
+            currency=currency,
+        )
     )
     return ApiResponse(
         data=events,

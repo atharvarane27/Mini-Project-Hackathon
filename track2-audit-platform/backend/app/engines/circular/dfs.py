@@ -1,11 +1,12 @@
-"""Scaffold for backend/app/engines/circular/dfs; implementation pending."""
+"""Bounded simple-cycle detection for the circular transfer graph."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
-from app.engines.circular.graph import MultiDiGraph
+from app.engines.circular.graph import CircularEdge, MultiDiGraph
 
 WHITE = 0
 GRAY = 1
@@ -16,7 +17,7 @@ BLACK = 2
 class CycleCandidate:
     cycle: tuple[str, ...]
     edges: tuple[str, ...]
-    total_amount: float
+    total_amount: int
     currency: str
     window_minutes: int
 
@@ -48,62 +49,57 @@ class DFSCycleDetector:
         self.use_scc_pruning = use_scc_pruning
         self.stats = TraversalStats()
 
-    def _canonical_cycle(self, nodes: list[str]) -> tuple[str, ...]:
-        if not nodes:
+    @staticmethod
+    def _cycle_nodes_from_edges(edges: list[CircularEdge]) -> tuple[str, ...]:
+        if not edges:
             return tuple()
-        normalized = list(dict.fromkeys(nodes))
-        if len(normalized) == 1:
-            return (normalized[0],)
-        rotations = [tuple(normalized[i:] + normalized[:i]) for i in range(len(normalized))]
-        return min(rotations)
+        if len(edges) == 1:
+            edge = edges[0]
+            return (edge.sender,) if edge.sender == edge.receiver else (edge.sender, edge.receiver)
+        nodes = [edges[0].sender]
+        for edge in edges:
+            nodes.append(edge.receiver)
+        if nodes[0] == nodes[-1]:
+            nodes = nodes[:-1]
+        return tuple(nodes)
 
-    def _register_cycle(self, cycles: list[CycleCandidate], seen: set[tuple[str, ...]], path: list[str], graph: MultiDiGraph) -> None:
-        if not path:
+    @staticmethod
+    def _canonical_txn_ids(edges: list[CircularEdge]) -> tuple[str, ...]:
+        txn_ids = [edge.txn_id for edge in edges]
+        if not txn_ids:
+            return tuple()
+        if len(txn_ids) == 1:
+            return (txn_ids[0],)
+        first = min(range(len(txn_ids)), key=lambda idx: txn_ids[idx])
+        rotated = txn_ids[first:] + txn_ids[:first]
+        return tuple(rotated)
+
+    def _register_cycle(self, cycles: list[CycleCandidate], seen: set[tuple[str, ...]], path_edges: list[CircularEdge]) -> None:
+        if not path_edges:
             return
-        candidate = self._canonical_cycle(path)
-        if len(candidate) == 1 and path != [path[0], path[0]]:
+
+        if len({edge.txn_id for edge in path_edges}) != len(path_edges):
             return
-        if candidate in seen:
+
+        currencies = {edge.currency for edge in path_edges}
+        if len(currencies) != 1:
             return
-        seen.add(candidate)
-        edges: list[str] = []
-        for idx, node in enumerate(candidate[:-1]):
-            for edge in graph.neighbors(node):
-                if edge.receiver == candidate[idx + 1]:
-                    edges.append(edge.txn_id)
-                    break
-        if not edges and len(candidate) > 1:
-            for edge in graph.neighbors(candidate[-1]):
-                if edge.receiver == candidate[0]:
-                    edges.append(edge.txn_id)
-                    break
-        amounts: list[float] = []
-        currencies: set[str] = set()
-        for idx, node in enumerate(candidate[:-1]):
-            for edge in graph.neighbors(node):
-                if edge.receiver == candidate[idx + 1]:
-                    amounts.append(float(edge.amount))
-                    currencies.add(edge.currency)
-        if not amounts and len(candidate) > 1:
-            for idx, node in enumerate(candidate):
-                for edge in graph.neighbors(node):
-                    if edge.receiver == candidate[(idx + 1) % len(candidate)]:
-                        amounts.append(float(edge.amount))
-                        currencies.add(edge.currency)
-        total_amount = sum(amounts) if amounts else 0.0
-        currency = sorted(currencies)[0] if currencies else "USD"
-        timestamps: list[datetime] = []
-        for idx, node in enumerate(candidate[:-1]):
-            for edge in graph.neighbors(node):
-                if edge.receiver == candidate[idx + 1]:
-                    timestamps.append(edge.timestamp)
-        if not timestamps and len(candidate) == 1:
-            timestamps = [edge.timestamp for edge in graph.neighbors(candidate[0]) if edge.receiver == candidate[0]]
+        currency = next(iter(currencies))
+
+        candidate_edges = list(path_edges)
+        txn_signature = self._canonical_txn_ids(candidate_edges)
+        if txn_signature in seen:
+            return
+        seen.add(txn_signature)
+
+        cycle_nodes = self._cycle_nodes_from_edges(candidate_edges)
+        total_amount = sum(int(edge.amount) for edge in candidate_edges)
+        timestamps = [edge.timestamp for edge in candidate_edges]
         window_minutes = int((max(timestamps) - min(timestamps)).total_seconds() // 60) if timestamps else 0
         cycles.append(
             CycleCandidate(
-                cycle=candidate,
-                edges=tuple(edges),
+                cycle=cycle_nodes,
+                edges=txn_signature,
                 total_amount=total_amount,
                 currency=currency,
                 window_minutes=window_minutes,
@@ -120,6 +116,7 @@ class DFSCycleDetector:
         candidate_cap: int | None = None,
     ) -> list[CycleCandidate]:
         self.stats = TraversalStats()
+
         limit_hops = self.max_hops if max_hops is None else max_hops
         limit_window = self.max_window_minutes if max_window_minutes is None else max_window_minutes
         limit_cap = self.candidate_cap if candidate_cap is None else candidate_cap
@@ -128,59 +125,70 @@ class DFSCycleDetector:
         if start_node is not None:
             ordered_nodes = [start_node] + [node for node in ordered_nodes if node != start_node]
 
-        color: dict[str, int] = {node: WHITE for node in ordered_nodes}
         cycles: list[CycleCandidate] = []
         seen: set[tuple[str, ...]] = set()
 
-        def dfs(node: str, path: list[str], path_start: datetime | None) -> None:
-            if len(path) > limit_hops:
+        def dfs(node: str, path_nodes: list[str], path_edges: list[CircularEdge], path_set: set[str]) -> None:
+            if len(path_nodes) > limit_hops:
                 self.stats.pruned_by_hops += 1
                 return
 
             self.stats.nodes_visited += 1
-            color[node] = GRAY
 
             for edge in sorted(graph.neighbors(node), key=lambda item: (item.timestamp, item.txn_id)):
                 self.stats.edges_traversed += 1
-                if path_start is None:
-                    path_start = edge.timestamp
-                if limit_window is not None and path_start is not None:
-                    if abs((edge.timestamp - path_start).total_seconds()) > limit_window * 60:
+                if edge.txn_id in {item.txn_id for item in path_edges}:
+                    continue
+
+                if limit_window is not None and path_edges:
+                    first_ts = path_edges[0].timestamp
+                    if edge.timestamp < path_edges[-1].timestamp:
+                        continue
+                    if (edge.timestamp - first_ts).total_seconds() > limit_window * 60:
                         self.stats.pruned_by_window += 1
                         continue
 
                 neighbor = edge.receiver
                 if neighbor == node:
-                    cycle_path = [node, node]
-                    self._register_cycle(cycles, seen, cycle_path, graph)
+                    cycle_edges = [*path_edges, edge]
+                    self._register_cycle(cycles, seen, cycle_edges)
                     self.stats.cycles_found += 1
                     if len(cycles) >= limit_cap:
                         self.stats.pruned_by_cap += 1
                         return
                     continue
 
-                if neighbor in path:
-                    cycle_path = path[path.index(neighbor):] + [neighbor]
-                    self._register_cycle(cycles, seen, cycle_path, graph)
+                if neighbor in path_set:
+                    cycle_start = path_nodes.index(neighbor)
+                    cycle_edges = path_edges[cycle_start:] + [edge]
+                    self._register_cycle(cycles, seen, cycle_edges)
                     self.stats.cycles_found += 1
                     if len(cycles) >= limit_cap:
                         self.stats.pruned_by_cap += 1
                         return
                     continue
 
-                if len(path) >= limit_hops:
+                if len(path_nodes) >= limit_hops:
                     self.stats.pruned_by_hops += 1
                     continue
-                if color.get(neighbor, WHITE) == WHITE:
-                    dfs(neighbor, path + [neighbor], path_start)
-                    if len(cycles) >= limit_cap:
-                        return
 
-            color[node] = BLACK
+                if limit_window is not None and path_edges:
+                    first_ts = path_edges[0].timestamp
+                    if (edge.timestamp - first_ts).total_seconds() > limit_window * 60:
+                        self.stats.pruned_by_window += 1
+                        continue
+
+                next_nodes = path_nodes + [neighbor]
+                next_edges = path_edges + [edge]
+                if len(next_nodes) > limit_hops:
+                    self.stats.pruned_by_hops += 1
+                    continue
+                dfs(neighbor, next_nodes, next_edges, path_set | {neighbor})
+                if len(cycles) >= limit_cap:
+                    return
 
         for node in ordered_nodes:
-            if color[node] == WHITE:
-                dfs(node, [node], None)
+            dfs(node, [node], [], {node})
             if len(cycles) >= limit_cap:
                 break
 

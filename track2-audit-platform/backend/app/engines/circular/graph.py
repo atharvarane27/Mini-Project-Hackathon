@@ -116,6 +116,10 @@ class MultiDiGraph:
         if not receiver:
             raise ValueError("receiver is required")
 
+        code = str(currency).strip().upper()
+        if not code:
+            raise ValueError(f"currency is required for {txn_id!r}")
+
         dt = _parse_datetime(timestamp)
         if dt is None:
             raise ValueError(f"Invalid timestamp for {txn_id!r}: {timestamp!r}")
@@ -126,7 +130,7 @@ class MultiDiGraph:
             receiver=str(receiver),
             timestamp=dt,
             amount=_as_decimal(amount),
-            currency=str(currency).upper(),
+            currency=code,
             metadata=dict(metadata),
         )
         self._nodes.add(edge.sender)
@@ -202,8 +206,9 @@ class MultiDiGraph:
             record.get("currency")
             or record.get("currency_code")
             or record.get("Currency")
-            or "USD"
         )
+        if currency is None:
+            raise ValueError(f"Transfer record {txn_id!r} missing currency")
 
         metadata = {k: v for k, v in record.items() if k not in {
             "txn_id",

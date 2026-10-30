@@ -197,7 +197,7 @@ class IngestionService:
                 continue
 
             # Check uniqueness: (source_system_id, external_ref, source_revision)
-            existing_src = (
+            existing_same_revision = (
                 db.query(SourceRecord)
                 .filter_by(
                     source_system_id=source_system_id,
@@ -207,12 +207,10 @@ class IngestionService:
                 .first()
             )
 
-            if existing_src is not None:
-                if existing_src.payload_hash == result.payload_hash:
-                    # Identical replay / exact duplicate -> idempotent no-op
+            if existing_same_revision is not None:
+                if existing_same_revision.payload_hash == result.payload_hash:
                     b_duplicate += 1
                 else:
-                    # Changed row with same external reference & revision -> conflict!
                     b_conflict += 1
                     err = QuarantinedRowError(
                         row_number=result.row_number,
@@ -220,7 +218,7 @@ class IngestionService:
                         error_code="EXTERNAL_REF_REVISION_CONFLICT",
                         error_message=(
                             f"Row has external_ref '{result.external_ref}' and revision "
-                            f"{result.source_revision} matching existing record {existing_src.id} "
+                            f"{result.source_revision} matching existing record {existing_same_revision.id} "
                             f"with differing payload hash."
                         ),
                         raw_data=result.raw_payload,
@@ -228,9 +226,23 @@ class IngestionService:
                     b_errors.append(err.to_dict())
                 continue
 
+            existing_higher_revision = (
+                db.query(SourceRecord)
+                .filter(
+                    SourceRecord.source_system_id == source_system_id,
+                    SourceRecord.external_ref == result.external_ref,
+                    SourceRecord.source_revision > result.source_revision,
+                )
+                .first()
+            )
+            if existing_higher_revision is not None:
+                # A newer revision already exists for the same external reference.
+                # Accept the row as a legitimate newer version instead of flagging a conflict.
+                pass
+
             # Canonicalize row with duplicate reference collapsing and double-entry journals
             canon_res = self.canonicalizer.canonicalize_row(
-                db, result, job_id, source_system_id
+                db, result, job_id, source_system_id, allow_revision_update=True
             )
             src_rec = canon_res.source_record
             txn = canon_res.transaction
@@ -238,16 +250,37 @@ class IngestionService:
 
             if canon_res.is_ambiguous:
                 # Ambiguous duplicate: conflicting facts for same external reference
-                db.add_all([src_rec, junction])
+                if canon_res.junction is not None:
+                    db.add_all([src_rec, junction])
+                else:
+                    db.add(src_rec)
                 b_rejected += 1
                 b_conflict += 1
+                txn_id = txn.id if txn is not None else "<unknown>"
                 err = QuarantinedRowError(
                     row_number=result.row_number,
                     external_ref=result.external_ref,
                     error_code="AMBIGUOUS_DUPLICATE_REFERENCE",
                     error_message=(
                         f"Row with external_ref '{result.external_ref}' conflicts with existing "
-                        f"canonical transaction '{txn.id}'."
+                        f"canonical transaction '{txn_id}'."
+                    ),
+                    raw_data=result.raw_payload,
+                )
+                b_errors.append(err.to_dict())
+                continue
+
+            if canon_res.transaction is None:
+                db.add(src_rec)
+                b_rejected += 1
+                b_conflict += 1
+                err = QuarantinedRowError(
+                    row_number=result.row_number,
+                    external_ref=result.external_ref,
+                    error_code="QUARANTINED_ACCOUNT_REFERENCE",
+                    error_message=(
+                        "Row references one or more account identifiers that are missing or invalid; "
+                        "record quarantined for review."
                     ),
                     raw_data=result.raw_payload,
                 )
@@ -261,9 +294,10 @@ class IngestionService:
                 db.add_all([src_rec, junction])
 
             # Durable Outbox Event
+            txn_id = txn.id if txn is not None else "<unknown>"
             outbox_payload = {
                 "source_record_id": src_rec.id,
-                "transaction_id": txn.id,
+                "transaction_id": txn_id,
                 "external_ref": result.external_ref,
                 "amount_minor": result.amount_minor,
                 "currency": result.currency,

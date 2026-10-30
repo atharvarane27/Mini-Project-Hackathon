@@ -25,6 +25,7 @@ from app.db.models import (  # noqa: E402
     SourceRecord,
     SourceRecordTransaction,
     Transaction,
+    Account,
 )
 from app.ingestion.canonicalizer import Canonicalizer  # noqa: E402
 from app.ingestion.normalizer import NormalizedRow  # noqa: E402
@@ -634,3 +635,64 @@ class TestTransactionsAPI:
         # Nonexistent ID returns 404
         resp_404 = test_client.get("/api/v1/transactions/txn-does-not-exist")
         assert resp_404.status_code == 404
+
+    def test_duplicate_resolution_on_concurrent_insert(self, canonicalizer: Canonicalizer, db_session: Session) -> None:
+        ext_ref = f"EXT-CONCURRENT-{uuid.uuid4().hex[:8]}"
+        row_1 = _make_row(ext_ref=ext_ref, amount_minor=250000, revision=1)
+        row_2 = _make_row(ext_ref=ext_ref, amount_minor=250000, revision=2)
+
+        res_1 = canonicalizer.canonicalize_row(db_session, row_1, "job-conc-1", "CORE_BANKING")
+        db_session.add_all([res_1.source_record, res_1.transaction, res_1.junction])
+        db_session.commit()
+
+        res_2 = canonicalizer.canonicalize_row(db_session, row_2, "job-conc-2", "CORE_BANKING")
+        assert res_2.is_duplicate is True
+        db_session.add_all([res_2.source_record, res_2.junction])
+        db_session.commit()
+
+        txn_count = db_session.query(Transaction).filter_by(external_canonical_ref=f"CANON-CORE_BANKING-{ext_ref}").count()
+        assert txn_count == 1
+
+    def test_snapshot_uses_bounded_keyset_batches(self, canonicalizer: Canonicalizer, db_session: Session) -> None:
+        base = datetime(2026, 10, 29, 10, 0, tzinfo=UTC)
+        for i in range(12):
+            row = _make_row(ext_ref=f"EXT-BATCH-{i:02d}-{uuid.uuid4().hex[:4]}", amount_minor=(i + 1) * 1000, occurred_at=base + timedelta(minutes=i))
+            res = canonicalizer.canonicalize_row(db_session, row, f"job-batch-{i}", "BATCH_SRC")
+            db_session.add_all([res.source_record, res.transaction, res.junction])
+        db_session.commit()
+
+        snapshot = list(canonicalizer.get_downstream_snapshot(db_session, batch_size=5))
+        assert len(snapshot) == 12
+        assert [event.amount_minor for event in snapshot] == sorted(event.amount_minor for event in snapshot)
+
+    def test_auto_created_accounts_inherit_row_currency(self, canonicalizer: Canonicalizer, db_session: Session) -> None:
+        row = _make_row(ext_ref=f"EXT-CURRENCY-{uuid.uuid4().hex[:8]}", amount_minor=12345, currency="USD")
+        res = canonicalizer.canonicalize_row(db_session, row, "job-currency", "BANK_USD")
+        assert res.transaction is not None
+        assert res.junction is not None
+        db_session.add_all([res.source_record, res.transaction, res.junction])
+        db_session.commit()
+
+        sender = db_session.query(Account).filter_by(id=row.sender_account_id).one()
+        receiver = db_session.query(Account).filter_by(id=row.receiver_account_id).one()
+        assert sender.currency == "USD"
+        assert receiver.currency == "USD"
+
+    def test_changed_timestamp_makes_duplicate_ambiguous(self, canonicalizer: Canonicalizer, db_session: Session) -> None:
+        ext_ref = f"EXT-TSTAMP-{uuid.uuid4().hex[:8]}"
+        row_1 = _make_row(ext_ref=ext_ref, amount_minor=50000, occurred_at=datetime(2026, 10, 29, 9, 0, tzinfo=UTC))
+        row_2 = _make_row(ext_ref=ext_ref, amount_minor=50000, revision=2, occurred_at=datetime(2026, 10, 29, 9, 5, tzinfo=UTC))
+
+        res_1 = canonicalizer.canonicalize_row(db_session, row_1, "job-tstamp-1", "TSTAMP_SRC")
+        assert res_1.transaction is not None
+        assert res_1.junction is not None
+        db_session.add_all([res_1.source_record, res_1.transaction, res_1.junction])
+        db_session.commit()
+
+        res_2 = canonicalizer.canonicalize_row(db_session, row_2, "job-tstamp-2", "TSTAMP_SRC")
+        assert res_2.transaction is not None
+        assert res_2.junction is not None
+        assert res_2.is_ambiguous is True
+        assert res_2.is_duplicate is False
+        assert res_2.source_record.record_status == "AMBIGUOUS"
+        assert res_2.junction.link_type == "AMBIGUOUS_DUPLICATE"

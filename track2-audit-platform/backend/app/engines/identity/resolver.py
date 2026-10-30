@@ -79,11 +79,15 @@ class DuplicateResolver:
         text_field: str,
         amount_field: str = "amount_minor",
         similarity_threshold: float = 0.8,
+        ambiguous_threshold: float = 0.55,
+        max_distance: int | None = 3,
     ) -> None:
         self._blocking = BlockingEngine(index_fields=index_fields, phonetic_field=phonetic_field)
         self._text_field = text_field
         self._amount_field = amount_field
         self._threshold = float(similarity_threshold)
+        self._ambiguous_threshold = float(ambiguous_threshold)
+        self._max_distance = max_distance
         self._records: dict[str, dict[str, Any]] = {}
 
     @staticmethod
@@ -93,9 +97,13 @@ class DuplicateResolver:
         return str(value_a).strip().lower() == str(value_b).strip().lower()
 
     @staticmethod
-    def _reversal_or_mirror(record_a: dict[str, Any], record_b: dict[str, Any]) -> bool:
-        left_amount = record_a.get("amount_minor")
-        right_amount = record_b.get("amount_minor")
+    def _reversal_or_mirror(
+        record_a: dict[str, Any],
+        record_b: dict[str, Any],
+        amount_field: str = "amount_minor",
+    ) -> bool:
+        left_amount = record_a.get(amount_field)
+        right_amount = record_b.get(amount_field)
         left_sender = str(record_a.get("sender_account_id", "")).strip()
         left_receiver = str(record_a.get("receiver_account_id", "")).strip()
         right_sender = str(record_b.get("sender_account_id", "")).strip()
@@ -127,6 +135,8 @@ class DuplicateResolver:
         candidate_id: str,
         query_record: dict[str, Any],
         candidate_record: dict[str, Any],
+        *,
+        soundex_code: str = "0000",
     ) -> DuplicateClassification:
         query_text = normalize_text(query_record.get(self._text_field, ""))
         candidate_text = normalize_text(candidate_record.get(self._text_field, ""))
@@ -135,8 +145,10 @@ class DuplicateResolver:
         candidate_amount = candidate_record.get(self._amount_field)
 
         if query_text and candidate_text:
-            distance = levenshtein_distance(query_text, candidate_text)
+            distance = levenshtein_distance(query_text, candidate_text, max_distance=self._max_distance)
             score = levenshtein_similarity(query_text, candidate_text)
+            if distance > (self._max_distance or 0):
+                score = 0.0
         else:
             distance = 0
             score = 1.0 if query_text == candidate_text else 0.0
@@ -150,19 +162,25 @@ class DuplicateResolver:
             except (TypeError, ValueError):
                 amount_match = False
 
-        if self._reversal_or_mirror(query_record, candidate_record):
+        if self._reversal_or_mirror(query_record, candidate_record, self._amount_field):
             reason = "mirror/reversal transfer detected"
             result = self.NON_MATCH
         elif query_amount is not None and candidate_amount is not None and not amount_match:
             reason = "amount mismatch"
             result = self.NON_MATCH
-        elif query_text == candidate_text and amount_match:
+        elif query_text and candidate_text and query_text == candidate_text and amount_match:
             reason = "identical text and amount"
             result = self.EXACT
-        elif score >= self._threshold and self._same_direction(query_record.get("sender_account_id"), candidate_record.get("sender_account_id")) and self._same_direction(query_record.get("receiver_account_id"), candidate_record.get("receiver_account_id")):
+        elif (
+            query_text
+            and candidate_text
+            and score >= self._threshold
+            and self._same_direction(query_record.get("sender_account_id"), candidate_record.get("sender_account_id"))
+            and self._same_direction(query_record.get("receiver_account_id"), candidate_record.get("receiver_account_id"))
+        ):
             reason = "text close and direction consistent"
             result = self.CANDIDATE
-        elif score >= 0.55 and amount_match:
+        elif score >= self._ambiguous_threshold and amount_match:
             reason = "near text match but weakly unique"
             result = self.AMBIGUOUS
         else:
@@ -178,17 +196,34 @@ class DuplicateResolver:
             reason=reason,
         )
 
+        left_sender = str(query_record.get("sender_account_id", "")).strip()
+        left_receiver = str(query_record.get("receiver_account_id", "")).strip()
+        right_sender = str(candidate_record.get("sender_account_id", "")).strip()
+        right_receiver = str(candidate_record.get("receiver_account_id", "")).strip()
+        account_keys = tuple(
+            key
+            for key in (
+                f"sender:{left_sender}" if left_sender else None,
+                f"receiver:{left_receiver}" if left_receiver else None,
+                f"sender:{right_sender}" if right_sender else None,
+                f"receiver:{right_receiver}" if right_receiver else None,
+            )
+            if key
+        )
+
+        resolution_reason = f"Soundex({soundex_code}) - {reason}"
+
         return DuplicateClassification(
             result=result,
             record_id_a=query_id,
             record_id_b=candidate_id,
             evidence=evidence,
-            soundex_code="Soundex(" + evidence.reason + ")" if "Soundex" in evidence.reason else "0000",
+            soundex_code=soundex_code,
             levenshtein_distance=distance,
             similarity_ratio=score,
             amount_match=amount_match,
-            resolution_reason=f"Soundex({evidence.reason})" if result != self.NON_MATCH else f"Soundex({evidence.reason})",
-            matching_account_keys=(query_text, candidate_text),
+            resolution_reason=resolution_reason,
+            matching_account_keys=account_keys,
             amount_minor=int(query_amount) if query_amount is not None else 0,
         )
 
@@ -204,7 +239,15 @@ class DuplicateResolver:
             candidate_record = self._records.get(candidate_id)
             if candidate_record is None:
                 continue
-            results.append(self._classify_pair(query_id, candidate_id, dict(query_fields), candidate_record))
+            results.append(
+                self._classify_pair(
+                    query_id,
+                    candidate_id,
+                    dict(query_fields),
+                    candidate_record,
+                    soundex_code=pair.shared_soundex,
+                )
+            )
 
         order = {self.NON_MATCH: 0, self.AMBIGUOUS: 1, self.CANDIDATE: 2, self.EXACT: 3}
         results.sort(key=lambda item: (-order.get(item.result, 0), item.record_id_b))
